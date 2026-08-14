@@ -16,7 +16,7 @@
 ## 무엇을 측정하나요?
 
 <p align="center">
-  <img src="docs/images/prompt-efficiency-workflow.png" alt="Prompt efficiency workflow" width="100%" />
+  <img src="docs/images/prompt-efficiency-workflow.svg" alt="Prompt efficiency workflow" width="100%" />
 </p>
 
 | 지표 | 의미 |

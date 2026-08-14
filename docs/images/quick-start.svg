@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="330" viewBox="0 0 1440 330" role="img" aria-labelledby="title">
   <title id="title">Three step quick start</title>
-  <defs><style>.t{font:700 34px system-ui;fill:#fff}.num{font:800 42px system-ui;fill:#67e8f9}.n{font:700 24px system-ui;fill:#fff}.cmd{font:500 18px ui-monospace,monospace;fill:#bae6fd}.card{fill:#16233d;stroke:#37517a;stroke-width:2}</style></defs>
+  <defs><style>.t{font:700 36px system-ui;fill:#fff}.num{font:800 46px system-ui;fill:#67e8f9}.n{font:700 27px system-ui;fill:#fff}.cmd{font:700 23px ui-monospace,monospace;fill:#e0f2fe}.card{fill:#16233d;stroke:#4b6b99;stroke-width:2}</style></defs>
   <rect width="1440" height="330" rx="28" fill="#0b1325"/><text x="60" y="67" class="t">Run the full stack in three steps</text>
-  <g transform="translate(60 115)"><rect class="card" width="390" height="145" rx="22"/><text x="30" y="52" class="num">1</text><text x="88" y="49" class="n">Configure</text><text x="30" y="102" class="cmd">cp .env.example .env</text></g>
-  <g transform="translate(525 115)"><rect class="card" width="390" height="145" rx="22"/><text x="30" y="52" class="num">2</text><text x="88" y="49" class="n">Start</text><text x="30" y="102" class="cmd">docker compose up --build -d</text></g>
-  <g transform="translate(990 115)"><rect class="card" width="390" height="145" rx="22"/><text x="30" y="52" class="num">3</text><text x="88" y="49" class="n">Verify</text><text x="30" y="102" class="cmd">curl localhost:8080/health</text></g>
+  <g transform="translate(60 115)"><rect class="card" width="390" height="145" rx="22"/><text x="30" y="54" class="num">1</text><text x="92" y="50" class="n">Configure</text><text x="30" y="108" class="cmd">cp .env.example .env</text></g>
+  <g transform="translate(525 115)"><rect class="card" width="390" height="145" rx="22"/><text x="30" y="54" class="num">2</text><text x="92" y="50" class="n">Start</text><text x="30" y="108" class="cmd">docker compose up --build -d</text></g>
+  <g transform="translate(990 115)"><rect class="card" width="390" height="145" rx="22"/><text x="30" y="54" class="num">3</text><text x="92" y="50" class="n">Verify</text><text x="30" y="108" class="cmd">curl localhost:8080/health</text></g>
 </svg>

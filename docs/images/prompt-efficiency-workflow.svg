@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="650" viewBox="0 0 1440 650" role="img" aria-labelledby="title desc">
+  <title id="title">Prompt efficiency workflow</title>
+  <desc id="desc">Prompt, response, evaluation and improvement stages with tokens to success, retry waste, quality score and efficiency metrics.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5 0 10z" fill="#334155"/></marker>
+    <style>
+      .heading{font:800 43px system-ui;fill:#111827}.card{fill:#fff;stroke-width:4}.number{font:800 36px system-ui;fill:#fff}.name{font:800 25px system-ui;fill:#172033}.symbol{font:800 58px system-ui}.metric{fill:#fff;stroke-width:3}.metric-name{font:800 20px system-ui;fill:#172033}.flow{fill:none;stroke:#334155;stroke-width:5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="650" rx="28" fill="#f8fafc"/>
+  <text x="720" y="72" text-anchor="middle" class="heading">MEASURE  -  LEARN  -  IMPROVE</text>
+
+  <path class="flow" d="M335 290H405"/><path class="flow" d="M685 290H755"/><path class="flow" d="M1035 290H1105"/>
+
+  <g transform="translate(65 135)">
+    <rect class="card" width="270" height="310" rx="24" stroke="#06b6d4"/>
+    <circle cx="135" cy="55" r="34" fill="#06b6d4"/><text x="135" y="68" text-anchor="middle" class="number">1</text>
+    <text x="135" y="122" text-anchor="middle" class="name">PROMPT</text><text x="135" y="225" text-anchor="middle" class="symbol" fill="#0891b2">TXT</text>
+  </g>
+  <g transform="translate(415 135)">
+    <rect class="card" width="270" height="310" rx="24" stroke="#2563eb"/>
+    <circle cx="135" cy="55" r="34" fill="#2563eb"/><text x="135" y="68" text-anchor="middle" class="number">2</text>
+    <text x="135" y="122" text-anchor="middle" class="name">RESPONSE</text><text x="135" y="225" text-anchor="middle" class="symbol" fill="#2563eb">...</text>
+  </g>
+  <g transform="translate(765 135)">
+    <rect class="card" width="270" height="310" rx="24" stroke="#16a34a"/>
+    <circle cx="135" cy="55" r="34" fill="#16a34a"/><text x="135" y="68" text-anchor="middle" class="number">3</text>
+    <text x="135" y="122" text-anchor="middle" class="name">EVALUATE</text><text x="135" y="230" text-anchor="middle" class="symbol" fill="#16a34a">OK</text>
+  </g>
+  <g transform="translate(1115 135)">
+    <rect class="card" width="270" height="310" rx="24" stroke="#f59e0b"/>
+    <circle cx="135" cy="55" r="34" fill="#f59e0b"/><text x="135" y="68" text-anchor="middle" class="number">4</text>
+    <text x="135" y="122" text-anchor="middle" class="name">IMPROVE</text><text x="135" y="225" text-anchor="middle" class="symbol" fill="#d97706">UP</text>
+  </g>
+
+  <g transform="translate(65 505)"><rect class="metric" width="290" height="92" rx="46" stroke="#06b6d4"/><circle cx="48" cy="46" r="25" fill="#cffafe"/><text x="48" y="54" text-anchor="middle" class="metric-name" fill="#0891b2">T</text><text x="88" y="53" class="metric-name">TOKENS TO SUCCESS</text></g>
+  <g transform="translate(405 505)"><rect class="metric" width="290" height="92" rx="46" stroke="#2563eb"/><circle cx="48" cy="46" r="25" fill="#dbeafe"/><text x="48" y="54" text-anchor="middle" class="metric-name" fill="#2563eb">R</text><text x="88" y="53" class="metric-name">RETRY WASTE</text></g>
+  <g transform="translate(745 505)"><rect class="metric" width="290" height="92" rx="46" stroke="#16a34a"/><circle cx="48" cy="46" r="25" fill="#dcfce7"/><text x="48" y="54" text-anchor="middle" class="metric-name" fill="#16a34a">Q</text><text x="88" y="53" class="metric-name">QUALITY SCORE</text></g>
+  <g transform="translate(1085 505)"><rect class="metric" width="290" height="92" rx="46" stroke="#f59e0b"/><circle cx="48" cy="46" r="25" fill="#fef3c7"/><text x="48" y="54" text-anchor="middle" class="metric-name" fill="#d97706">E</text><text x="88" y="53" class="metric-name">EFFICIENCY</text></g>
+</svg>
