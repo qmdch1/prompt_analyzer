@@ -11,6 +11,7 @@
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" />
   <img alt="Kafka" src="https://img.shields.io/badge/Kafka-CDC-231F20?logo=apachekafka" />
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
 </p>
 
 ## 무엇을 측정하나요?
@@ -101,3 +102,7 @@ infra           PostgreSQL / Debezium 초기화
 ```
 
 > 실제 `.env`는 Git에 포함되지 않습니다. 모델 가격은 시점과 모델에 따라 달라지므로 환경변수로 관리합니다.
+
+## 라이선스
+
+이 프로젝트는 [MIT License](LICENSE)로 배포됩니다. 자유롭게 사용, 수정 및 배포할 수 있습니다.
