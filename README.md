@@ -59,29 +59,71 @@ docker compose up -d postgres
 cargo run
 ```
 
-## 사용 흐름
+## AI 에이전트 연결
+
+기존 에이전트는 **LLM 호출 앞뒤로 API만 부르면** 연결됩니다. 에이전트 코드는 그대로 두고 기록만 추가하면 됩니다.
 
 ```bash
-# 세션 생성
+# 1. 작업 시작 → 세션 생성
 curl -s localhost:8080/v1/sessions \
   -H 'content-type: application/json' \
   -d '{"goal":"CDC 구축"}'
 
-# 프롬프트 추가 → 예상 토큰과 프롬프트 점수를 즉시 반환
+# 2. LLM 호출 전 → 프롬프트 기록 (예상 토큰 + 프롬프트 점수 반환)
 curl -s localhost:8080/v1/sessions/SESSION_ID/runs \
   -H 'content-type: application/json' \
   -d '{"prompt":"Debezium CDC를 구성해줘","interaction":"NEW_TASK"}'
 
-# 사용자 평가 후 세션 효율 확인
+# 3. LLM 호출 후 → 응답과 실제 토큰 기록 (이게 있어야 토큰·비용 지표가 계산됩니다)
+curl -s localhost:8080/v1/runs/RUN_ID/complete \
+  -H 'content-type: application/json' \
+  -d '{"response":"...","input_tokens":120,"output_tokens":300,"latency_ms":1800}'
+
+# 4. 결과 평가 → 세션 효율 확인
 curl -s localhost:8080/v1/runs/RUN_ID/evaluate \
   -H 'content-type: application/json' \
   -d '{"quality_score":88,"accepted":true}'
 curl -s localhost:8080/v1/sessions/SESSION_ID/metrics
 ```
 
-## AI API 연결
+다시 시도할 때는 2번에 `"previous_run_id":"이전 RUN_ID"`와 `"interaction":"RETRY"`(같은 요청 재시도) 또는 `"REFINE"`(프롬프트 수정)을 넣습니다.
 
-API 키 없이도 기록과 분석은 모두 동작합니다. 직접 AI를 호출하려면 `.env`에 키만 넣고 다시 띄웁니다.
+Python 에이전트라면 이렇게 감싸면 됩니다.
+
+```python
+import time, requests
+
+API = "http://localhost:8080"
+session_id = requests.post(f"{API}/v1/sessions", json={"goal": "CDC 구축"}).json()["id"]
+
+def tracked(prompt, previous_run_id=None, interaction=None):
+    run = requests.post(f"{API}/v1/sessions/{session_id}/runs", json={
+        "prompt": prompt, "previous_run_id": previous_run_id, "interaction": interaction,
+    }).json()
+    started = time.time()
+    answer, usage = call_llm(prompt)  # 기존 에이전트의 LLM 호출
+    requests.post(f"{API}/v1/runs/{run['id']}/complete", json={
+        "response": answer,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "latency_ms": int((time.time() - started) * 1000),
+    })
+    return run["id"], answer
+```
+
+### 도커로 띄웠을 때 주소
+
+| 에이전트가 도는 곳 | API 주소 |
+|---|---|
+| 내 PC에서 바로 실행 | `http://localhost:8080` |
+| 다른 도커 컨테이너 | `http://host.docker.internal:8080` |
+| 이 `compose.yaml`에 서비스로 추가 | `http://api:8080` |
+
+> 리눅스 Docker Engine(Docker Desktop 아님)에서 `host.docker.internal`을 쓰려면 에이전트 컨테이너에 `extra_hosts: ["host.docker.internal:host-gateway"]`를 추가합니다.
+
+## OpenAI 직접 호출 (선택)
+
+에이전트 없이 분석기가 OpenAI를 대신 호출하게 할 수도 있습니다. 직접 호출하려면 `.env`에 키만 넣고 다시 띄웁니다.
 
 ```bash
 cp .env.example .env
