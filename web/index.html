@@ -135,7 +135,7 @@ table.mini th, table.mini td { padding: 4px 12px 4px 0; }
     <section class="card">
       <div class="card-head">
         <h2>토큰·비용 구성</h2>
-        <span class="muted small">캐시 입력은 앞서 보낸 대화를 다시 보낸 부분으로, 일반 입력보다 훨씬 싸게 청구됩니다</span>
+        <span class="muted small">캐시 토큰은 앞서 보낸 대화를 다시 보낸 부분으로, 입력 토큰보다 훨씬 싸게 청구됩니다</span>
       </div>
       <div class="scroll">
         <table class="breakdown">
@@ -271,14 +271,18 @@ async function loadSummary() {
 }
 
 // ---------- cached input / fresh input / output, in tokens and money
-const PARTS = [['cached', '캐시에서 다시 읽은 입력'], ['fresh', '새로 보낸 입력'], ['output', '출력 (AI가 쓴 답)']];
+const PARTS = [
+  ['cached', '캐시 토큰', '앞서 보낸 대화를 다시 보낸 입력 (서버 캐시에서 싸게 읽음)'],
+  ['fresh', '입력 토큰', '캐시를 뺀, 이번에 새로 보낸 입력'],
+  ['output', '출력 토큰', 'AI가 쓴 답'],
+];
 const pct = (a, b) => (!b ? '–' : a > 0 && (100 * a) / b < 0.5 ? '<1%' : `${Math.round((100 * a) / b)}%`);
 function renderBreakdown(b) {
   if (!b) return;
   const tokens = PARTS.reduce((a, [k]) => a + b[k].tokens, 0), usd = PARTS.reduce((a, [k]) => a + b[k].usd, 0);
-  const row = (label, t, u, cls) => h('tr', { class: cls }, h('td', {}, label), h('td', { class: 'num' }, num(t)),
+  const row = (label, t, u, cls, hint) => h('tr', { class: cls }, h('td', { title: hint }, label), h('td', { class: 'num' }, num(t)),
     h('td', { class: 'num' }, pct(t, tokens)), h('td', { class: 'num' }, money(u)), h('td', { class: 'num' }, pct(u, usd)));
-  $('breakdown').replaceChildren(...PARTS.map(([k, label]) => row(label, b[k].tokens, b[k].usd)), row('합계', tokens, usd, 'total'));
+  $('breakdown').replaceChildren(...PARTS.map(([k, label, hint]) => row(label, b[k].tokens, b[k].usd, null, hint)), row('합계', tokens, usd, 'total'));
   const note = $('breakdown-note');
   note.hidden = !b.unpriced_tokens;
   note.textContent = b.unpriced_tokens ? `가격 정보가 없는 모델의 ${num(b.unpriced_tokens)}토큰은 비용에서 빠져 있습니다.` : '';
@@ -495,7 +499,7 @@ function detail(it) {
   const split = { cached: it.cached_tokens, fresh: Math.max(0, it.input_tokens - it.cached_tokens), output: it.output_tokens };
   const costTable = h('table', { class: 'mini' },
     h('thead', {}, h('tr', {}, h('th', {}, '구분'), h('th', { class: 'num' }, '토큰'), h('th', { class: 'num' }, `비용 (${state.currency === 'usd' ? '$' : '원'})`))),
-    h('tbody', {}, ...PARTS.map(([k, label]) => h('tr', {}, h('td', {}, label), h('td', { class: 'num' }, num(split[k])), h('td', { class: 'num' }, parts ? money(parts[k]) : '–'))),
+    h('tbody', {}, ...PARTS.map(([k, label, hint]) => h('tr', {}, h('td', { title: hint }, label), h('td', { class: 'num' }, num(split[k])), h('td', { class: 'num' }, parts ? money(parts[k]) : '–'))),
       h('tr', { class: 'total' }, h('td', {}, '합계'), h('td', { class: 'num' }, num(it.input_tokens + it.output_tokens)), h('td', { class: 'num' }, money(it.cost_usd)))));
   return h('div', { class: 'run', onclick: (e) => e.stopPropagation() },
     h('div', { class: 'run-head' },
