@@ -3,6 +3,7 @@ name: prompt-analyzer
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: prompt_analyzer
       POSTGRES_USER: prompt
@@ -16,6 +17,7 @@ services:
 
   api:
     build: .
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false

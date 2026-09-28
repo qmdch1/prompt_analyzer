@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="560" viewBox="0 0 1440 560" role="img" aria-labelledby="title desc">
   <title id="title">Prompt Observability architecture</title>
-  <desc id="desc">A single Rust API stores prompt runs in PostgreSQL and computes session metrics immediately. OpenAI can optionally be called directly.</desc>
+  <desc id="desc">Claude Code and Codex report every prompt and answer to a single Rust API through hooks and MCP. The API stores runs in PostgreSQL and computes session metrics immediately. OpenAI can optionally be called directly.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1"><stop stop-color="#071426"/><stop offset="1" stop-color="#111a38"/></linearGradient>
     <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".28"/></filter>
@@ -13,7 +13,7 @@
   <text x="70" y="78" class="title">Prompt Observability</text>
   <text x="70" y="112" class="sub">One API | one database | instant metrics</text>
   <g filter="url(#shadow)">
-    <g transform="translate(70 180)"><rect class="card" width="300" height="160" rx="22"/><text x="150" y="60" text-anchor="middle" class="icon">01</text><text x="150" y="102" text-anchor="middle" class="name">User</text><text x="150" y="132" text-anchor="middle" class="hint">prompt · evaluation</text></g>
+    <g transform="translate(70 180)"><rect class="card" width="300" height="160" rx="22"/><text x="150" y="60" text-anchor="middle" class="icon">AI</text><text x="150" y="102" text-anchor="middle" class="name">Claude · Codex</text><text x="150" y="132" text-anchor="middle" class="hint">hooks · MCP</text></g>
     <g transform="translate(570 180)"><rect class="card" width="300" height="160" rx="22"/><text x="150" y="60" text-anchor="middle" class="icon">API</text><text x="150" y="102" text-anchor="middle" class="name">Rust API</text><text x="150" y="132" text-anchor="middle" class="hint">Axum · score · metrics</text></g>
     <g transform="translate(1070 180)"><rect class="card" width="300" height="160" rx="22" stroke="#6ee7b7"/><text x="150" y="60" text-anchor="middle" class="icon" fill="#6ee7b7">DB</text><text x="150" y="102" text-anchor="middle" class="name">PostgreSQL</text><text x="150" y="132" text-anchor="middle" class="hint">runs · session metrics</text></g>
     <g transform="translate(600 410)"><rect class="card" width="240" height="105" rx="20" stroke-dasharray="8 6"/><text x="120" y="48" text-anchor="middle" class="name">OpenAI</text><text x="120" y="78" text-anchor="middle" class="hint">optional</text></g>

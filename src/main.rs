@@ -1,4 +1,6 @@
 mod analysis;
+mod mcp;
+mod track;
 
 use analysis::{analyze_prompt, recompute_session, PromptAnalysis};
 use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
@@ -47,6 +49,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/runs/{id}/execute", post(execute_run))
         .route("/v1/runs/{id}/evaluate", post(evaluate_run))
         .route("/v1/sessions/{id}/metrics", get(get_metrics))
+        .route("/v1/track/prompt", post(track::track_prompt))
+        .route("/v1/track/complete", post(track::track_complete))
+        .route("/mcp/{source}", post(mcp::handle))
         .layer(CorsLayer::permissive()).layer(TraceLayer::new_for_http()).with_state(state);
     let addr = format!("0.0.0.0:{}", env::var("PORT").unwrap_or_else(|_| "8080".into()));
     tracing::info!(%addr, "API listening");
@@ -81,10 +86,15 @@ async fn create_run(Path(session_id): Path<Uuid>, State(s): State<AppState>, Jso
 }
 
 async fn complete_run(Path(id): Path<Uuid>, State(s): State<AppState>, Json(p): Json<CompleteRun>) -> ApiResult<Json<Value>> {
+    Ok(Json(finish_run(&s, id, p, None).await?))
+}
+
+/// Stores the answer and usage of a run. Latency defaults to the time since the run was created.
+async fn finish_run(s: &AppState, id: Uuid, p: CompleteRun, model: Option<String>) -> ApiResult<Value> {
     let cost = p.input_tokens as f64 / 1_000_000.0 * s.cfg.input_rate + p.output_tokens as f64 / 1_000_000.0 * s.cfg.output_rate;
-    let session_id: Uuid = sqlx::query_scalar(r#"UPDATE prompt_runs SET response=$2,input_tokens=$3,output_tokens=$4,cached_tokens=$5,latency_ms=$6,cost_usd=$7,status='SUCCEEDED',completed_at=now() WHERE id=$1 RETURNING session_id"#).bind(id).bind(p.response).bind(p.input_tokens).bind(p.output_tokens).bind(p.cached_tokens).bind(p.latency_ms).bind(cost).fetch_optional(&s.db).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?.ok_or_else(||err(StatusCode::NOT_FOUND,"run not found"))?;
+    let session_id: Uuid = sqlx::query_scalar(r#"UPDATE prompt_runs SET response=$2,input_tokens=$3,output_tokens=$4,cached_tokens=$5,latency_ms=coalesce($6,(extract(epoch FROM now()-created_at)*1000)::bigint),cost_usd=$7,model=coalesce($8,model),status='SUCCEEDED',completed_at=now() WHERE id=$1 RETURNING session_id"#).bind(id).bind(p.response).bind(p.input_tokens).bind(p.output_tokens).bind(p.cached_tokens).bind(p.latency_ms).bind(cost).bind(model).fetch_optional(&s.db).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?.ok_or_else(||err(StatusCode::NOT_FOUND,"run not found"))?;
     recompute_session(&s.db,session_id).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?;
-    Ok(Json(json!({"id":id,"status":"SUCCEEDED","cost_usd":cost})))
+    Ok(json!({"id":id,"status":"SUCCEEDED","cost_usd":cost}))
 }
 
 async fn execute_run(Path(id): Path<Uuid>, State(s): State<AppState>) -> ApiResult<Json<Value>> {
@@ -99,14 +109,14 @@ async fn execute_run(Path(id): Path<Uuid>, State(s): State<AppState>) -> ApiResu
         .unwrap_or_default()
         .to_owned();
     let usage=&result["usage"];
-    let _ = complete_run(Path(id),State(s),Json(CompleteRun{response:response.clone(),input_tokens:usage["input_tokens"].as_i64().unwrap_or(0) as i32,output_tokens:usage["output_tokens"].as_i64().unwrap_or(0) as i32,cached_tokens:usage["input_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0) as i32,latency_ms:Some(started.elapsed().as_millis() as i64)})).await?;
+    finish_run(&s,id,CompleteRun{response:response.clone(),input_tokens:usage["input_tokens"].as_i64().unwrap_or(0) as i32,output_tokens:usage["output_tokens"].as_i64().unwrap_or(0) as i32,cached_tokens:usage["input_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0) as i32,latency_ms:Some(started.elapsed().as_millis() as i64)},None).await?;
     Ok(Json(json!({"id":id,"response":response,"usage":usage})))
 }
 
 async fn evaluate_run(Path(id): Path<Uuid>, State(s): State<AppState>, Json(p): Json<EvaluateRun>) -> ApiResult<Json<Value>> {
     if !(0.0..=100.0).contains(&p.quality_score) { return Err(err(StatusCode::BAD_REQUEST,"quality_score must be 0..100")); }
     let session_id: Uuid=sqlx::query_scalar("SELECT session_id FROM prompt_runs WHERE id=$1").bind(id).fetch_optional(&s.db).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?.ok_or_else(||err(StatusCode::NOT_FOUND,"run not found"))?;
-    sqlx::query("INSERT INTO evaluations(run_id,quality_score,accepted,reason) VALUES($1,$2,$3,$4) ON CONFLICT(run_id) DO UPDATE SET quality_score=excluded.quality_score,accepted=excluded.accepted,reason=excluded.reason").bind(id).bind(p.quality_score).bind(p.accepted).bind(p.reason).execute(&s.db).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?;
+    sqlx::query("INSERT INTO evaluations(run_id,quality_score,accepted,reason) VALUES($1,$2,$3,$4) ON CONFLICT(run_id) DO UPDATE SET quality_score=excluded.quality_score,accepted=excluded.accepted,reason=excluded.reason,auto=false").bind(id).bind(p.quality_score).bind(p.accepted).bind(p.reason).execute(&s.db).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?;
     recompute_session(&s.db,session_id).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?;
     Ok(Json(json!({"run_id":id,"accepted":p.accepted})))
 }

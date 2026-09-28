@@ -61,3 +61,39 @@ pub async fn recompute_session(pool: &PgPool, session_id: Uuid) -> Result<()> {
     ).bind(session_id).execute(pool).await?;
     Ok(())
 }
+
+/// Guesses how a follow-up prompt relates to the previous attempt in the same agent session.
+pub fn infer_interaction(prompt: &str) -> &'static str {
+    let p = prompt.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| p.contains(w));
+    if has(&["다시", "재시도", "안 돼", "안돼", "안 되", "안되", "에러가", "에러 나", "에러났", "오류가", "오류 나", "오류났", "실패", "여전히", "아직도", "틀렸",
+             "again", "retry", "an error", "failed", "not working", "doesn't work", "still"]) {
+        "RETRY"
+    } else if has(&["말고", "대신", "아니라", "아니고", "수정해", "고쳐", "바꿔", "빠졌", "빠져", "누락", "해야지", "instead", "rather", "missing"]) {
+        "REFINE"
+    } else {
+        "NEW_TASK"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::infer_interaction;
+
+    #[test]
+    fn infers_interaction_from_follow_up() {
+        for (prompt, expected) in [
+            ("이거 구조가 너무 빡센데 단순하고 쉬운구조로 세팅해", "NEW_TASK"),
+            ("커밋하고 푸시해", "NEW_TASK"),
+            ("에러 처리 로직 추가해줘", "NEW_TASK"),
+            ("안돼 다시 해봐", "RETRY"),
+            ("빌드하면 에러가 나", "RETRY"),
+            ("it still fails", "RETRY"),
+            ("PostgreSQL 말고 SQLite로 바꿔", "REFINE"),
+            ("1,2,3,4를 자동으로 연결되게 해야지", "REFINE"),
+            ("use axum instead", "REFINE"),
+        ] {
+            assert_eq!(infer_interaction(prompt), expected, "{prompt}");
+        }
+    }
+}

@@ -59,59 +59,60 @@ docker compose up -d postgres
 cargo run
 ```
 
-## AI 에이전트 연결
+## AI 에이전트 자동 연결 (Claude Code · Codex)
 
-기존 에이전트는 **LLM 호출 앞뒤로 API만 부르면** 연결됩니다. 에이전트 코드는 그대로 두고 기록만 추가하면 됩니다.
+서버를 띄우고 설치 스크립트를 한 번 실행하면 끝입니다. 에이전트 코드는 건드리지 않습니다.
 
 ```bash
-# 1. 작업 시작 → 세션 생성
-curl -s localhost:8080/v1/sessions \
-  -H 'content-type: application/json' \
+docker compose up --build -d
+python3 integrations/install.py
+```
+
+그다음 Claude Code나 Codex를 새로 시작하면 모든 프롬프트가 자동으로 기록됩니다.
+
+| 단계 | 방식 | 하는 일 |
+|---|---|---|
+| 1. 세션 | 자동 (훅) | 새 작업이면 세션을 새로 열고, 이어지는 요청이면 같은 세션에 붙입니다 |
+| 2. 프롬프트 | 자동 (훅) | 보낼 때마다 프롬프트 점수와 예상 토큰을 기록합니다 |
+| 3. 응답·토큰 | 자동 (훅) | 답변이 끝나면 실제 입력·출력·캐시 토큰과 응답을 기록합니다 |
+| 4. 평가 | 자동 추정 + 말로 | "다시 해봐", "에러가 나", "말고 ~로 바꿔"처럼 다시 요청하면 이전 시도는 실패, 다른 작업으로 넘어가면 성공으로 봅니다. "좋았어 90점"처럼 말하면 MCP로 점수가 기록됩니다 |
+
+대화 중에 이렇게 쓸 수 있습니다 (MCP 도구).
+
+- **"좋았어 90점"**, **"별로야"** → `rate_last_answer`: 직전 답변을 평가합니다
+- **"내 프롬프트 통계 보여줘"** → `prompt_stats`: 최근 작업의 토큰, 재시도 낭비, 성공률과 프롬프트 개선 팁을 보여줍니다
+
+알아둘 점
+
+- Codex는 처음 시작할 때 새 훅을 신뢰할지 묻습니다. 한 번 승인하면 됩니다.
+- 서버가 꺼져 있어도 에이전트는 평소처럼 동작하고 기록만 빠집니다 (`~/.prompt-analyzer/hook.log`).
+- Claude Code의 서브에이전트가 쓴 토큰은 포함되지 않습니다.
+- 연결 해제: `python3 integrations/install.py --uninstall`
+- 서버 주소가 다르면 설치할 때 지정합니다: `PROMPT_ANALYZER_URL=http://서버:8080 python3 integrations/install.py`
+
+### 다른 에이전트를 직접 연결하려면
+
+LLM 호출 앞뒤로 API를 부르면 됩니다.
+
+```bash
+# 1. 세션 생성
+curl -s localhost:8080/v1/sessions -H 'content-type: application/json' \
   -d '{"goal":"CDC 구축"}'
 
-# 2. LLM 호출 전 → 프롬프트 기록 (예상 토큰 + 프롬프트 점수 반환)
-curl -s localhost:8080/v1/sessions/SESSION_ID/runs \
-  -H 'content-type: application/json' \
+# 2. LLM 호출 전: 프롬프트 기록 (점수·예상 토큰 반환)
+#    다시 시도하면 "previous_run_id"와 "interaction":"RETRY" 또는 "REFINE"을 넣습니다
+curl -s localhost:8080/v1/sessions/SESSION_ID/runs -H 'content-type: application/json' \
   -d '{"prompt":"Debezium CDC를 구성해줘","interaction":"NEW_TASK"}'
 
-# 3. LLM 호출 후 → 응답과 실제 토큰 기록 (이게 있어야 토큰·비용 지표가 계산됩니다)
-curl -s localhost:8080/v1/runs/RUN_ID/complete \
-  -H 'content-type: application/json' \
-  -d '{"response":"...","input_tokens":120,"output_tokens":300,"latency_ms":1800}'
+# 3. LLM 호출 후: 응답과 실제 토큰 기록
+curl -s localhost:8080/v1/runs/RUN_ID/complete -H 'content-type: application/json' \
+  -d '{"response":"...","input_tokens":120,"output_tokens":300}'
 
-# 4. 결과 평가 → 세션 효율 확인
-curl -s localhost:8080/v1/runs/RUN_ID/evaluate \
-  -H 'content-type: application/json' \
+# 4. 평가 후 지표 확인
+curl -s localhost:8080/v1/runs/RUN_ID/evaluate -H 'content-type: application/json' \
   -d '{"quality_score":88,"accepted":true}'
 curl -s localhost:8080/v1/sessions/SESSION_ID/metrics
 ```
-
-다시 시도할 때는 2번에 `"previous_run_id":"이전 RUN_ID"`와 `"interaction":"RETRY"`(같은 요청 재시도) 또는 `"REFINE"`(프롬프트 수정)을 넣습니다.
-
-Python 에이전트라면 이렇게 감싸면 됩니다.
-
-```python
-import time, requests
-
-API = "http://localhost:8080"
-session_id = requests.post(f"{API}/v1/sessions", json={"goal": "CDC 구축"}).json()["id"]
-
-def tracked(prompt, previous_run_id=None, interaction=None):
-    run = requests.post(f"{API}/v1/sessions/{session_id}/runs", json={
-        "prompt": prompt, "previous_run_id": previous_run_id, "interaction": interaction,
-    }).json()
-    started = time.time()
-    answer, usage = call_llm(prompt)  # 기존 에이전트의 LLM 호출
-    requests.post(f"{API}/v1/runs/{run['id']}/complete", json={
-        "response": answer,
-        "input_tokens": usage.input_tokens,
-        "output_tokens": usage.output_tokens,
-        "latency_ms": int((time.time() - started) * 1000),
-    })
-    return run["id"], answer
-```
-
-### 도커로 띄웠을 때 주소
 
 | 에이전트가 도는 곳 | API 주소 |
 |---|---|
@@ -143,10 +144,13 @@ curl -X POST localhost:8080/v1/runs/RUN_ID/execute
 ## 코드 위치
 
 ```text
-src/main.rs       REST API + 선택적 AI 호출
-src/analysis.rs   프롬프트 점수 + 세션 효율 계산
-migrations/       PostgreSQL 스키마 (시작 시 자동 적용)
-compose.yaml      postgres + api
+src/main.rs         REST API + 선택적 AI 호출
+src/analysis.rs     프롬프트 점수 + 세션 효율 계산 + 재시도 추정
+src/track.rs        에이전트 자동 기록 (훅이 호출)
+src/mcp.rs          MCP 서버 (/mcp/claude, /mcp/codex)
+integrations/       Claude Code·Codex 훅과 설치 스크립트
+migrations/         PostgreSQL 스키마 (시작 시 자동 적용)
+compose.yaml        postgres + api
 ```
 
 > 실제 `.env`는 Git에 포함되지 않습니다. 모델 가격은 시점과 모델에 따라 달라지므로 환경변수로 관리합니다.
