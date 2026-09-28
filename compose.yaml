@@ -1,114 +1,29 @@
-name: prompt-observability
+name: prompt-analyzer
 
 services:
   postgres:
-    build:
-      context: .
-      dockerfile: infra/postgres/Dockerfile
+    image: postgres:17-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-prompt_analyzer}
-      POSTGRES_USER: ${POSTGRES_USER:-prompt}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prompt}
-    command: ["postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10"]
+      POSTGRES_DB: prompt_analyzer
+      POSTGRES_USER: prompt
+      POSTGRES_PASSWORD: prompt
     ports: ["5432:5432"]
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prompt} -d ${POSTGRES_DB:-prompt_analyzer}"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", "pg_isready -U prompt -d prompt_analyzer"]
+      interval: 3s
       retries: 20
-
-  redis:
-    image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    ports: ["6379:6379"]
-    volumes: ["redis_data:/data"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  kafka:
-    image: apache/kafka:3.9.1
-    ports: ["9094:9094"]
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  connect:
-    image: quay.io/debezium/connect:3.0
-    depends_on:
-      postgres: { condition: service_healthy }
-      kafka: { condition: service_healthy }
-    ports: ["8083:8083"]
-    environment:
-      BOOTSTRAP_SERVERS: kafka:9092
-      GROUP_ID: prompt-connect
-      CONFIG_STORAGE_TOPIC: prompt_connect_configs
-      OFFSET_STORAGE_TOPIC: prompt_connect_offsets
-      STATUS_STORAGE_TOPIC: prompt_connect_statuses
-      CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      STATUS_STORAGE_REPLICATION_FACTOR: 1
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-
-  connect-init:
-    build:
-      context: .
-      dockerfile: infra/debezium/Dockerfile
-    depends_on:
-      connect: { condition: service_healthy }
-    env_file: [.env]
-    entrypoint: ["sh", "/register.sh"]
-    restart: "no"
 
   api:
-    build: { context: ., target: runtime }
-    command: ["prompt-api"]
-    env_file: [.env]
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://prompt:prompt@postgres:5432/prompt_analyzer
     ports: ["8080:8080"]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health >/dev/null"]
-      interval: 10s
-      timeout: 3s
-      retries: 20
-
-  analyzer:
-    build: { context: ., target: runtime }
-    command: ["prompt-analyzer"]
-    env_file: [.env]
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      kafka: { condition: service_healthy }
-      connect-init: { condition: service_completed_successfully }
-    restart: unless-stopped
 
 volumes:
   postgres_data:
-  redis_data:

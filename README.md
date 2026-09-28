@@ -9,7 +9,6 @@
 <p align="center">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Axum-000000?logo=rust" />
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" />
-  <img alt="Kafka" src="https://img.shields.io/badge/Kafka-CDC-231F20?logo=apachekafka" />
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
 </p>
@@ -42,18 +41,23 @@
 </p>
 
 ```bash
-cp .env.example .env
 docker compose up --build -d
 curl http://localhost:8080/health
 ```
 
+`.env` 없이 바로 동작하고, DB 테이블은 API가 시작할 때 자동으로 만듭니다.
+
 | 서비스 | 주소 |
 |---|---|
 | REST API | `http://localhost:8080` |
-| Debezium Connect | `http://localhost:8083` |
-| PostgreSQL | `localhost:5432` |
-| Kafka | `localhost:9094` |
-| Redis | `localhost:6379` |
+| PostgreSQL | `localhost:5432` (`prompt` / `prompt`) |
+
+Rust로 직접 실행하려면 DB만 띄우고 `cargo run` 하면 됩니다.
+
+```bash
+docker compose up -d postgres
+cargo run
+```
 
 ## 사용 흐름
 
@@ -77,10 +81,13 @@ curl -s localhost:8080/v1/sessions/SESSION_ID/metrics
 
 ## AI API 연결
 
-API 키 없이도 기록과 분석은 모두 동작합니다. 직접 AI를 호출하려면 `.env`만 변경합니다.
+API 키 없이도 기록과 분석은 모두 동작합니다. 직접 AI를 호출하려면 `.env`에 키만 넣고 다시 띄웁니다.
+
+```bash
+cp .env.example .env
+```
 
 ```env
-AI_PROVIDER=openai
 OPENAI_API_KEY=your_key
 OPENAI_MODEL=gpt-5-mini
 MODEL_INPUT_USD_PER_MILLION=0
@@ -94,11 +101,10 @@ curl -X POST localhost:8080/v1/runs/RUN_ID/execute
 ## 코드 위치
 
 ```text
-apps/api        REST API + 선택적 AI 어댑터
-apps/analyzer   Kafka CDC consumer
-crates/core     토큰 추정 + 효율 계산
-migrations      PostgreSQL schema
-infra           PostgreSQL / Debezium 초기화
+src/main.rs       REST API + 선택적 AI 호출
+src/analysis.rs   프롬프트 점수 + 세션 효율 계산
+migrations/       PostgreSQL 스키마 (시작 시 자동 적용)
+compose.yaml      postgres + api
 ```
 
 > 실제 `.env`는 Git에 포함되지 않습니다. 모델 가격은 시점과 모델에 따라 달라지므로 환경변수로 관리합니다.

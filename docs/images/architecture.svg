@@ -1,27 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="620" viewBox="0 0 1440 620" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="560" viewBox="0 0 1440 560" role="img" aria-labelledby="title desc">
   <title id="title">Prompt Observability architecture</title>
-  <desc id="desc">Rust API stores prompt runs in PostgreSQL. Debezium sends changes through Kafka to the analyzer, which creates metrics. Redis supports caching.</desc>
+  <desc id="desc">A single Rust API stores prompt runs in PostgreSQL and computes session metrics immediately. OpenAI can optionally be called directly.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1"><stop stop-color="#071426"/><stop offset="1" stop-color="#111a38"/></linearGradient>
     <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".28"/></filter>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5 0 10z" fill="#55d9ff"/></marker>
     <style>
-      .title{font:700 42px system-ui;fill:#f8fafc}.sub{font:500 19px system-ui;fill:#93c5fd}.card{fill:#101d35;stroke:#334e75;stroke-width:2}.name{font:700 23px system-ui;fill:#fff}.hint{font:500 15px system-ui;fill:#9fb3cc}.icon{font:700 34px system-ui;fill:#55d9ff}.line{fill:none;stroke:#55d9ff;stroke-width:4;marker-end:url(#arrow)}
+      .title{font:700 42px system-ui;fill:#f8fafc}.sub{font:500 19px system-ui;fill:#93c5fd}.card{fill:#101d35;stroke:#334e75;stroke-width:2}.name{font:700 26px system-ui;fill:#fff}.hint{font:500 17px system-ui;fill:#9fb3cc}.icon{font:700 36px system-ui;fill:#55d9ff}.line{fill:none;stroke:#55d9ff;stroke-width:4;marker-end:url(#arrow)}.dash{fill:none;stroke:#55d9ff;stroke-width:3;stroke-dasharray:8 8;marker-end:url(#arrow)}
     </style>
   </defs>
-  <rect width="1440" height="620" rx="28" fill="url(#bg)"/>
+  <rect width="1440" height="560" rx="28" fill="url(#bg)"/>
   <text x="70" y="78" class="title">Prompt Observability</text>
-  <text x="70" y="112" class="sub">Store once | analyze asynchronously | improve continuously</text>
+  <text x="70" y="112" class="sub">One API | one database | instant metrics</text>
   <g filter="url(#shadow)">
-    <g transform="translate(55 220)"><rect class="card" width="155" height="150" rx="22"/><text x="78" y="58" text-anchor="middle" class="icon">01</text><text x="78" y="98" text-anchor="middle" class="name">User</text><text x="78" y="125" text-anchor="middle" class="hint">prompt</text></g>
-    <g transform="translate(255 220)"><rect class="card" width="170" height="150" rx="22"/><text x="85" y="58" text-anchor="middle" class="icon">API</text><text x="85" y="98" text-anchor="middle" class="name">Rust API</text><text x="85" y="125" text-anchor="middle" class="hint">Axum</text></g>
-    <g transform="translate(470 220)"><rect class="card" width="175" height="150" rx="22"/><text x="88" y="58" text-anchor="middle" class="icon">DB</text><text x="88" y="98" text-anchor="middle" class="name">PostgreSQL</text><text x="88" y="125" text-anchor="middle" class="hint">source of truth</text></g>
-    <g transform="translate(690 220)"><rect class="card" width="175" height="150" rx="22"/><text x="88" y="58" text-anchor="middle" class="icon">CDC</text><text x="88" y="98" text-anchor="middle" class="name">Debezium</text><text x="88" y="125" text-anchor="middle" class="hint">WAL events</text></g>
-    <g transform="translate(910 220)"><rect class="card" width="160" height="150" rx="22"/><text x="80" y="58" text-anchor="middle" class="icon">K</text><text x="80" y="98" text-anchor="middle" class="name">Kafka</text><text x="80" y="125" text-anchor="middle" class="hint">event stream</text></g>
-    <g transform="translate(1115 220)"><rect class="card" width="190" height="150" rx="22"/><text x="95" y="58" text-anchor="middle" class="icon">SUM</text><text x="95" y="98" text-anchor="middle" class="name">Analyzer</text><text x="95" y="125" text-anchor="middle" class="hint">session metrics</text></g>
-    <g transform="translate(270 435)"><rect class="card" width="140" height="105" rx="20" stroke="#f87171"/><text x="70" y="43" text-anchor="middle" class="icon" fill="#f87171">R</text><text x="70" y="76" text-anchor="middle" class="name">Redis</text></g>
-    <g transform="translate(1125 435)"><rect class="card" width="170" height="105" rx="20" stroke="#6ee7b7"/><text x="85" y="43" text-anchor="middle" class="icon" fill="#6ee7b7">UP</text><text x="85" y="76" text-anchor="middle" class="name">Metrics</text></g>
+    <g transform="translate(70 180)"><rect class="card" width="300" height="160" rx="22"/><text x="150" y="60" text-anchor="middle" class="icon">01</text><text x="150" y="102" text-anchor="middle" class="name">User</text><text x="150" y="132" text-anchor="middle" class="hint">prompt · evaluation</text></g>
+    <g transform="translate(570 180)"><rect class="card" width="300" height="160" rx="22"/><text x="150" y="60" text-anchor="middle" class="icon">API</text><text x="150" y="102" text-anchor="middle" class="name">Rust API</text><text x="150" y="132" text-anchor="middle" class="hint">Axum · score · metrics</text></g>
+    <g transform="translate(1070 180)"><rect class="card" width="300" height="160" rx="22" stroke="#6ee7b7"/><text x="150" y="60" text-anchor="middle" class="icon" fill="#6ee7b7">DB</text><text x="150" y="102" text-anchor="middle" class="name">PostgreSQL</text><text x="150" y="132" text-anchor="middle" class="hint">runs · session metrics</text></g>
+    <g transform="translate(600 410)"><rect class="card" width="240" height="105" rx="20" stroke-dasharray="8 6"/><text x="120" y="48" text-anchor="middle" class="name">OpenAI</text><text x="120" y="78" text-anchor="middle" class="hint">optional</text></g>
   </g>
-  <path class="line" d="M210 295H250"/><path class="line" d="M425 295H465"/><path class="line" d="M645 295H685"/><path class="line" d="M865 295H905"/><path class="line" d="M1070 295H1110"/>
-  <path class="line" d="M340 370V430"/><path class="line" d="M1210 370V430"/>
+  <path class="line" d="M370 260H565"/><path class="line" d="M870 260H1065"/>
+  <path class="dash" d="M720 340V405"/>
 </svg>

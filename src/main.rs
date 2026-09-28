@@ -1,5 +1,7 @@
+mod analysis;
+
+use analysis::{analyze_prompt, recompute_session, PromptAnalysis};
 use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
-use prompt_core::{analyze_prompt, recompute_session, PromptAnalysis};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool};
@@ -10,7 +12,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 struct AppState { db: PgPool, http: reqwest::Client, cfg: Arc<Config> }
 
-struct Config { provider: String, api_key: String, model: String, base_url: String, input_rate: f64, output_rate: f64 }
+struct Config { api_key: String, model: String, base_url: String, input_rate: f64, output_rate: f64 }
 
 #[derive(Deserialize)] struct CreateSession { goal: String }
 #[derive(Deserialize)] struct CreateRun { prompt: String, model: Option<String>, previous_run_id: Option<Uuid>, interaction: Option<String> }
@@ -25,10 +27,10 @@ fn err(status: StatusCode, e: impl std::fmt::Display) -> (StatusCode, Json<Value
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
-    let db = PgPool::connect(&env::var("DATABASE_URL")?).await?;
+    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
+    let db = PgPool::connect(&env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://prompt:prompt@localhost:5432/prompt_analyzer".into())).await?;
+    sqlx::migrate!().run(&db).await?;
     let cfg = Config {
-        provider: env::var("AI_PROVIDER").unwrap_or_else(|_| "disabled".into()),
         api_key: env::var("OPENAI_API_KEY").unwrap_or_default(),
         model: env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-5-mini".into()),
         base_url: env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".into()),
@@ -46,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/runs/{id}/evaluate", post(evaluate_run))
         .route("/v1/sessions/{id}/metrics", get(get_metrics))
         .layer(CorsLayer::permissive()).layer(TraceLayer::new_for_http()).with_state(state);
-    let addr = format!("{}:{}", env::var("APP_HOST").unwrap_or_else(|_| "0.0.0.0".into()), env::var("APP_PORT").unwrap_or_else(|_| "8080".into()));
+    let addr = format!("0.0.0.0:{}", env::var("PORT").unwrap_or_else(|_| "8080".into()));
     tracing::info!(%addr, "API listening");
     axum::serve(tokio::net::TcpListener::bind(addr).await?, app).await?;
     Ok(())
@@ -86,7 +88,7 @@ async fn complete_run(Path(id): Path<Uuid>, State(s): State<AppState>, Json(p): 
 }
 
 async fn execute_run(Path(id): Path<Uuid>, State(s): State<AppState>) -> ApiResult<Json<Value>> {
-    if s.cfg.provider != "openai" || s.cfg.api_key.is_empty() { return Err(err(StatusCode::SERVICE_UNAVAILABLE,"AI is disabled; set AI_PROVIDER=openai and OPENAI_API_KEY")); }
+    if s.cfg.api_key.is_empty() { return Err(err(StatusCode::SERVICE_UNAVAILABLE,"AI is disabled; set OPENAI_API_KEY")); }
     let (prompt, model): (String,String) = sqlx::query_as("UPDATE prompt_runs SET status='RUNNING' WHERE id=$1 RETURNING prompt,model").bind(id).fetch_optional(&s.db).await.map_err(|e|err(StatusCode::INTERNAL_SERVER_ERROR,e))?.ok_or_else(||err(StatusCode::NOT_FOUND,"run not found"))?;
     let started=Instant::now();
     let result: Value = s.http.post(format!("{}/responses",s.cfg.base_url)).bearer_auth(&s.cfg.api_key).json(&json!({"model":model,"input":prompt})).send().await.map_err(|e|err(StatusCode::BAD_GATEWAY,e))?.error_for_status().map_err(|e|err(StatusCode::BAD_GATEWAY,e))?.json().await.map_err(|e|err(StatusCode::BAD_GATEWAY,e))?;
