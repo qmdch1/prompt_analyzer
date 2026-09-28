@@ -23,7 +23,17 @@ def post(path, body):
     urllib.request.urlopen(req, timeout=3).read()
 
 
+def local_path(path):
+    """Windows apps run this hook through wsl.exe and pass C:\\... paths; read them via /mnt/c."""
+    if isinstance(path, str):
+        path = path.removeprefix("\\\\?\\")
+        if len(path) > 2 and path[1] == ":" and path[2] in "\\/":
+            return f"/mnt/{path[0].lower()}{path[2:]}".replace("\\", "/")
+    return path
+
+
 def read_jsonl(path):
+    path = local_path(path)
     entries = []
     try:
         with open(path, encoding="utf-8") as f:

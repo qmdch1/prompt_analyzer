@@ -1,3 +1,17 @@
+> **AI 에이전트용 설치 안내** — 이 README를 읽은 AI(Claude Code, Codex 등)는 아래를 순서대로 실행하면 됩니다.
+>
+> 1. 필요한 것: `docker`, `git`, `python3`. Windows에서는 WSL(Ubuntu) 안에서 실행합니다.
+> 2. 설치 (이미 받은 저장소라면 `git clone` 줄은 건너뜁니다)
+>    ```bash
+>    git clone https://github.com/qmdch1/prompt_analyzer.git && cd prompt_analyzer
+>    docker compose up --build -d
+>    python3 integrations/install.py
+>    ```
+> 3. 확인: `python3 integrations/install.py --check` 결과가 모두 ✓이면 끝입니다. Codex만 ✗이면, 사용자가 Codex를 켜서 새 훅을 한 번 승인해야 합니다.
+> 4. 사용자에게 알릴 것: 대시보드는 http://localhost:8080 이고, 에이전트를 새로 시작하면 기록이 시작됩니다.
+>
+> `install.py`가 하는 일: Claude Code와 Codex(WSL에서 실행하면 Windows 앱 포함)의 훅 설정(`~/.claude/settings.json`, `~/.codex/hooks.json`)에 `UserPromptSubmit`·`Stop` 훅을 추가하고, MCP 서버 `prompt-analyzer`를 등록합니다. 기존 훅은 건드리지 않고, 여러 번 실행해도 되며, 훅이 실패해도 프롬프트를 막지 않습니다. 되돌리기는 `--uninstall`입니다.
+
 <p align="center">
   <img src="docs/images/architecture.svg" alt="Prompt Observability architecture" width="100%" />
 </p>
@@ -75,7 +89,9 @@ python3 integrations/install.py       # Claude Code·Codex 자동 기록 연결
 |---|---|
 | 대시보드 | `http://localhost:8080` |
 | REST API | `http://localhost:8080/v1/...` |
-| PostgreSQL | `localhost:5432` (`prompt` / `prompt`) |
+| PostgreSQL | `localhost:15432` (`prompt` / `prompt`) |
+
+인증이 없어서 두 주소 모두 이 PC 안에서만 열립니다(다른 PC에서는 접속되지 않습니다).
 
 대시보드는 정적 페이지이고, 데이터는 브라우저의 JS가 API(`/v1/dashboard`, `/v1/prompts`)에서 가져옵니다. 훅이 프롬프트를 실시간으로 DB에 넣기 때문에, 서버만 켜져 있으면 항상 최신 데이터가 보입니다. 서버는 PC나 Docker를 재시작해도 자동으로 다시 뜹니다.
 

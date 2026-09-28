@@ -31,7 +31,7 @@ fn err(status: StatusCode, e: impl std::fmt::Display) -> (StatusCode, Json<Value
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
-    let db = PgPool::connect(&env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://prompt:prompt@localhost:5432/prompt_analyzer".into())).await?;
+    let db = PgPool::connect(&env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://prompt:prompt@localhost:15432/prompt_analyzer".into())).await?;
     sqlx::migrate!().run(&db).await?;
     let cfg = Config {
         api_key: env::var("OPENAI_API_KEY").unwrap_or_default(),

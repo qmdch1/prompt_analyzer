@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: prompt_analyzer
       POSTGRES_USER: prompt
       POSTGRES_PASSWORD: prompt
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:15432:5432"]  # this PC only; 15432 so a local PostgreSQL on 5432 does not clash
     volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prompt -d prompt_analyzer"]
@@ -23,7 +23,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgres://prompt:prompt@postgres:5432/prompt_analyzer
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]  # this PC only; no auth, so keep it off the network
     depends_on:
       postgres: { condition: service_healthy }
 

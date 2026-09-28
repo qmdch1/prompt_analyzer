@@ -5,10 +5,13 @@
     python3 integrations/install.py --check      # is everything connected and recording?
     python3 integrations/install.py --uninstall  # remove everything again
 
+Run it where the hook should live (Linux, macOS, or WSL). From WSL it also connects the Windows
+Claude Code / Codex apps, which then run the same hook through wsl.exe.
 Set PROMPT_ANALYZER_URL if the API is not at http://localhost:8080.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,24 +23,52 @@ HOME = Path.home()
 API = os.environ.get("PROMPT_ANALYZER_URL", "http://localhost:8080").rstrip("/")
 HOOK = HOME / ".prompt-analyzer" / "hook.py"
 EVENTS = ("UserPromptSubmit", "Stop")
-AGENTS = {
-    "claude": {"hooks": HOME / ".claude" / "settings.json",
-               "mcp_add": ["claude", "mcp", "add", "--scope", "user", "--transport", "http", "prompt-analyzer", f"{API}/mcp/claude"],
-               "mcp_remove": ["claude", "mcp", "remove", "--scope", "user", "prompt-analyzer"]},
-    "codex": {"hooks": HOME / ".codex" / "hooks.json",
-              "mcp_add": ["codex", "mcp", "add", "prompt-analyzer", "--url", f"{API}/mcp/codex"],
-              "mcp_remove": ["codex", "mcp", "remove", "prompt-analyzer"]},
-}
 
 
-def edit_hooks(path, source, install):
+def windows_home():
+    """C:\\Users\\<me> as a WSL path, or None when not running inside WSL."""
+    if not os.environ.get("WSL_DISTRO_NAME") or not shutil.which("cmd.exe"):
+        return None
+    try:
+        win = subprocess.run(["cmd.exe", "/c", "echo %USERPROFILE%"], capture_output=True, text=True, cwd="/mnt/c", timeout=15).stdout.strip()
+        path = subprocess.run(["wslpath", "-u", win], capture_output=True, text=True, timeout=15).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return Path(path) if path and Path(path).is_dir() else None
+
+
+def agents():
+    """Every agent install this machine has: (label, source, hook config file, hook command, CLI or None)."""
+    found = []
+    for source, config in (("claude", HOME / ".claude" / "settings.json"), ("codex", HOME / ".codex" / "hooks.json")):
+        if shutil.which(source) or config.parent.exists():
+            # `|| true`: a hook that can't run must never block the prompt (exit code 2 means "block").
+            found.append((source, source, config, f'python3 "{HOOK}" {source} {API} || true', shutil.which(source)))
+    win = windows_home()
+    if win:
+        # Windows apps hand the hook JSON to this distro. The path stays inside quotes as ~/...: Git Bash
+        # (Claude Code on Windows) rewrites bare /home/... arguments into C:/Program Files/Git/home/...
+        via_wsl = f'wsl.exe -d {os.environ["WSL_DISTRO_NAME"]} -e sh -c "python3 ~/{HOOK.relative_to(HOME)}'
+        codex_exes = sorted(win.glob("AppData/Local/OpenAI/Codex/bin/*/codex.exe"), key=lambda p: p.stat().st_mtime)
+        for source, config, cli in (("claude", win / ".claude" / "settings.json", win / ".local" / "bin" / "claude.exe"),
+                                    ("codex", win / ".codex" / "hooks.json", codex_exes[-1] if codex_exes else None)):
+            if config.parent.exists():
+                found.append((f"{source} (Windows)", source, config, f'{via_wsl} {source} {API} || true"', str(cli) if cli and Path(cli).exists() else None))
+    return found
+
+
+def ours(hook):
+    return f"{HOOK.parent.name}/{HOOK.name}" in hook.get("command", "")
+
+
+def edit_hooks(path, command, install):
     """Adds or removes our hook entries, leaving every other hook untouched."""
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     hooks = data.setdefault("hooks", {})
     for event in EVENTS:
-        groups = [g for g in hooks.get(event, []) if not any(str(HOOK) in h.get("command", "") for h in g.get("hooks", []))]
+        groups = [g for g in hooks.get(event, []) if not any(ours(h) for h in g.get("hooks", []))]
         if install:
-            groups.append({"hooks": [{"type": "command", "command": f'python3 "{HOOK}" {source} {API}', "timeout": 10}]})
+            groups.append({"hooks": [{"type": "command", "command": command, "timeout": 10}]})
         if groups:
             hooks[event] = groups
         else:
@@ -51,8 +82,18 @@ def edit_hooks(path, source, install):
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True).returncode == 0
+def cli(exe, *args):
+    # Windows executables get a Windows working directory; a \\wsl$ path confuses some of them.
+    return subprocess.run([exe, *args], capture_output=True, text=True, cwd="/mnt/c" if exe.endswith(".exe") else None)
+
+
+def mcp(exe, source, install):
+    scope = ["--scope", "user"] if source == "claude" else []
+    cli(exe, "mcp", "remove", *scope, "prompt-analyzer")
+    if not install:
+        return "제거"
+    add = ["--transport", "http", "prompt-analyzer", f"{API}/mcp/{source}"] if source == "claude" else ["prompt-analyzer", "--url", f"{API}/mcp/{source}"]
+    return "연결" if cli(exe, "mcp", "add", *scope, *add).returncode == 0 else "실패"
 
 
 def our_groups(path):
@@ -61,8 +102,7 @@ def our_groups(path):
         hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
     except (OSError, ValueError):
         return {}
-    return {event: i for event in EVENTS for i, g in enumerate(hooks.get(event, []))
-            if any(str(HOOK) in h.get("command", "") for h in g.get("hooks", []))}
+    return {event: i for event in EVENTS for i, g in enumerate(hooks.get(event, [])) if any(ours(h) for h in g.get("hooks", []))}
 
 
 def check(found):
@@ -80,28 +120,31 @@ def check(found):
     line(server, f"서버 켜짐 ({API})", "저장소 폴더에서: docker compose up -d")
     if line(HOOK.exists(), f"훅 스크립트 설치됨 ({HOOK})", "python3 integrations/install.py"):
         line(HOOK.read_bytes() == Path(__file__).with_name("hook.py").read_bytes(), "훅 스크립트가 최신", "python3 integrations/install.py 다시 실행")
-    for name, agent in found.items():
-        print(f"\n[{name}]")
-        groups = our_groups(agent["hooks"])
+    for label, source, config, _, exe in found:
+        print(f"\n[{label}]  {config}")
+        groups = our_groups(config)
         line(len(groups) == len(EVENTS), f"훅 등록 ({', '.join(EVENTS)})", "python3 integrations/install.py")
-        if name == "codex" and groups:
+        if source == "codex" and groups:
             # Codex runs a new hook only after the user trusts it once; trust is keyed by file:event:group:handler.
-            config = (HOME / ".codex" / "config.toml").read_text(encoding="utf-8") if (HOME / ".codex" / "config.toml").exists() else ""
+            toml = config.with_name("config.toml")
+            text = toml.read_text(encoding="utf-8") if toml.exists() else ""
             snake = {"UserPromptSubmit": "user_prompt_submit", "Stop": "stop"}
-            trusted = all(f'"{agent["hooks"]}:{snake[e]}:{i}:0"' in config for e, i in groups.items())
-            line(trusted, "Codex에서 훅 승인됨", "codex 를 한 번 켜서 새 훅을 신뢰(승인)하세요")
-        if shutil.which(name):
-            out = subprocess.run([name, "mcp", "get", "prompt-analyzer"], capture_output=True, text=True).stdout
-            good = ("Connected" in out) if name == "claude" else ("enabled: true" in out)
-            line(good, "MCP 연결 (rate_last_answer, prompt_stats)", "python3 integrations/install.py")
-        if server:
-            items = get(f"/v1/prompts?source={name}&limit=1").get("items") or []
+            trusted = all(re.search(rf'hooks\.json:{snake[e]}:{i}:0["\']\]\s*trusted_hash', text) for e, i in groups.items())
+            # Only presence is checkable here; a changed command needs approval again, so "마지막 기록" below is the real proof.
+            line(trusted, "Codex 훅 승인 기록 있음", "Codex를 새로 켜서 새 훅을 신뢰(승인)하세요 (앱은 설정의 훅 화면)")
+        if exe:
+            out = cli(exe, "mcp", "get", "prompt-analyzer").stdout
+            line(("Connected" in out) if source == "claude" else ("enabled: true" in out), "MCP 연결 (rate_last_answer, check_connection, prompt_stats)", "python3 integrations/install.py")
+    if server:
+        print()
+        for source in sorted({f[1] for f in found}):
+            items = get(f"/v1/prompts?source={source}&limit=1").get("items") or []
             if items:
-                ago = datetime.now(timezone.utc) - datetime.fromisoformat(items[0]["created_at"])
-                mins = int(ago.total_seconds() // 60)
-                print(f"  · 마지막 기록: {'방금' if mins < 1 else f'{mins}분 전' if mins < 60 else f'{mins // 60}시간 전' if mins < 1440 else f'{mins // 1440}일 전'} — {items[0]['prompt'][:40]!r}")
+                mins = int((datetime.now(timezone.utc) - datetime.fromisoformat(items[0]["created_at"])).total_seconds() // 60)
+                when = "방금" if mins < 1 else f"{mins}분 전" if mins < 60 else f"{mins // 60}시간 전" if mins < 1440 else f"{mins // 1440}일 전"
+                print(f"  · {source} 마지막 기록: {when} — {items[0]['prompt'][:40]!r}")
             else:
-                print(f"  · 아직 기록 없음 — {name}를 새로 시작해서 프롬프트를 하나 보내 보세요")
+                print(f"  · {source} 아직 기록 없음 — 새로 시작해서 프롬프트를 하나 보내 보세요")
     log = HOOK.parent / "hook.log"
     if log.exists() and log.stat().st_size:
         print("\n[최근 훅 오류] " + str(log))
@@ -110,7 +153,7 @@ def check(found):
 
 def main():
     install = "--uninstall" not in sys.argv
-    found = {name: a for name, a in AGENTS.items() if shutil.which(name) or a["hooks"].parent.exists()}
+    found = agents()
     if not found:
         sys.exit("Claude Code도 Codex도 찾지 못했습니다.")
     if "--check" in sys.argv:
@@ -120,19 +163,15 @@ def main():
         shutil.copy(Path(__file__).with_name("hook.py"), HOOK)
         if Path(__file__).resolve() != (HOOK.parent / "install.py").resolve():  # so --check works from anywhere
             shutil.copy(__file__, HOOK.parent / "install.py")
-    for name, agent in found.items():
-        edit_hooks(agent["hooks"], name, install)
-        mcp = "CLI 없음"
-        if shutil.which(name):
-            run(agent["mcp_remove"])
-            mcp = ("연결" if run(agent["mcp_add"]) else "실패") if install else "제거"
-        print(f"{name:<7} 훅 {'설치' if install else '제거'} ({agent['hooks']}), MCP {mcp}")
+    for label, source, config, command, exe in found:
+        edit_hooks(config, command, install)
+        print(f"{label:<17} 훅 {'설치' if install else '제거'} ({config}), MCP {mcp(exe, source, install) if exe else 'CLI 없음'}")
     if not install:
         shutil.rmtree(HOOK.parent, ignore_errors=True)
         print("\n연결을 모두 해제했습니다.")
         return
     print(f"\n완료. 에이전트를 새로 시작하면 모든 프롬프트가 {API} 에 자동 기록됩니다.")
-    if "codex" in found:
+    if any(source == "codex" for _, source, *_ in found):
         print("Codex는 처음 시작할 때 새 훅을 신뢰할지 묻습니다. 한 번 승인해 주세요.")
 
 
