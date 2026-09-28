@@ -118,6 +118,8 @@ def main():
     if install:
         HOOK.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(Path(__file__).with_name("hook.py"), HOOK)
+        if Path(__file__).resolve() != (HOOK.parent / "install.py").resolve():  # so --check works from anywhere
+            shutil.copy(__file__, HOOK.parent / "install.py")
     for name, agent in found.items():
         edit_hooks(agent["hooks"], name, install)
         mcp = "CLI 없음"

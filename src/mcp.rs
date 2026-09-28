@@ -41,6 +41,11 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "check_connection",
+            "description": "prompt-analyzer에 이 에이전트가 제대로 연결돼 기록되고 있는지 확인합니다. 사용자가 '분석기 연결 확인해줘', '기록되고 있어?', '훅 연결됐어?'처럼 물으면 호출하고 결과를 그대로 보여주세요.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
             "name": "prompt_stats",
             "description": "최근 작업들의 프롬프트 점수, 토큰 사용량, 재시도 낭비, 성공 여부와 최근 프롬프트 개선 팁을 보여줍니다. Shows recent prompt efficiency stats.",
             "inputSchema": {
@@ -64,6 +69,7 @@ async fn call_tool(s: &AppState, source: &str, params: &Value) -> Value {
             }
             _ => Err(anyhow::anyhow!("quality_score(0-100)와 accepted가 필요합니다")),
         },
+        "check_connection" => track::connection(&s.db, source).await,
         "prompt_stats" => track::stats(&s.db, source, args["limit"].as_i64().unwrap_or(10).clamp(1, 50)).await.map(|v| v.to_string()),
         name => Err(anyhow::anyhow!("unknown tool: {name}")),
     };

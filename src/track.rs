@@ -108,3 +108,28 @@ pub async fn stats(db: &PgPool, source: &str, limit: i64) -> anyhow::Result<Valu
     }
     Ok(v)
 }
+
+/// Is this agent really recording? Called from chat, so the prompt that asked is itself an open run when hooks work.
+pub async fn connection(db: &PgPool, source: &str) -> anyhow::Result<String> {
+    let (open_ago, answer_ago, total): (Option<f64>, Option<f64>, i64) = sqlx::query_as(r#"
+        SELECT (SELECT extract(epoch FROM now() - max(r.created_at))::float8 FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
+                WHERE s.source = $1 AND r.status = 'DRAFT' AND r.created_at > now() - interval '30 minutes'),
+               (SELECT extract(epoch FROM now() - max(r.completed_at))::float8 FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
+                WHERE s.source = $1 AND r.status = 'SUCCEEDED'),
+               (SELECT count(*) FROM prompt_runs r JOIN sessions s ON s.id = r.session_id WHERE s.source = $1)"#)
+        .bind(source).fetch_one(db).await?;
+    let ago = |secs: f64| match secs as i64 { s if s < 60 => format!("{s}초 전"), s if s < 3600 => format!("{}분 전", s / 60), s if s < 86400 => format!("{}시간 전", s / 3600), s => format!("{}일 전", s / 86400) };
+    let fix = if source == "codex" { "Codex를 새로 켜서 새 훅을 신뢰(승인)했는지 확인하세요. 터미널에서 `python3 ~/.prompt-analyzer/install.py --check` 로 자세히 볼 수 있습니다." }
+              else { "터미널에서 `python3 ~/.prompt-analyzer/install.py --check` 로 원인을 확인하세요." };
+    let mut lines = vec![format!("prompt-analyzer 연결 상태 ({source})"), "✓ 서버·MCP 연결됨 (이 도구가 응답함)".to_owned()];
+    lines.push(match open_ago {
+        Some(s) => format!("✓ 프롬프트 기록 중 (UserPromptSubmit 훅) — 지금 이 프롬프트가 {} 기록됨", ago(s)),
+        None => format!("✗ 지금 이 프롬프트가 기록되지 않았습니다. 프롬프트 훅이 동작하지 않는 상태입니다.\n  → {fix}"),
+    });
+    lines.push(match answer_ago {
+        Some(s) => format!("✓ 답변 기록 중 (Stop 훅) — 마지막 답변 {} 기록", ago(s)),
+        None => "· 아직 기록된 답변이 없습니다 (답변이 끝나면 토큰과 함께 기록됩니다)".to_owned(),
+    });
+    lines.push(format!("총 {total}개 기록 · 대시보드 http://localhost:8080"));
+    Ok(lines.join("\n"))
+}
