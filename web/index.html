@@ -95,6 +95,10 @@ pre.open { max-height: none; }
 .tooltip strong { font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .tile .value { font-size: 24px; } }
 .no { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.model { color: var(--ink-2); white-space: nowrap; font-size: 13px; }
+.unit-toggle { display: inline-flex; margin-left: 4px; background: var(--raised); border-radius: 5px; padding: 1px; vertical-align: 1px; }
+.unit-toggle button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 11px; padding: 0 6px; border-radius: 4px; cursor: pointer; }
+.unit-toggle button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
 .prompt { max-width: 440px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 tbody tr.item { cursor: pointer; }
 tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: none; }
@@ -144,8 +148,10 @@ tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: n
       <div class="scroll">
         <table>
           <thead><tr>
-            <th class="num">순번</th><th>시간</th><th>에이전트</th><th>프롬프트</th><th>유형</th>
-            <th class="num">토큰</th><th class="num" title="프롬프트 점수 = 명확성 40% + 구체성 35% + 구조 25%">점수</th><th>결과</th>
+            <th>시간</th><th>에이전트</th><th>프롬프트</th><th>유형</th><th>모델</th>
+            <th class="num">토큰</th>
+            <th class="num" id="cost-head">비용 <span class="unit-toggle" role="group" aria-label="통화"><button data-cur="krw">원</button><button data-cur="usd">$</button></span></th>
+            <th class="num" title="프롬프트 점수 = 명확성 40% + 구체성 35% + 구조 25%">점수</th><th>결과</th>
           </tr></thead>
           <tbody id="items"></tbody>
         </table>
@@ -191,7 +197,7 @@ const INTERACTION = { NEW_TASK: '새 작업', RETRY: '재시도', REFINE: '수�
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const state = {
-  days: store.get('days', '7'), source: store.get('source', 'all'), daily: [],
+  days: store.get('days', '7'), source: store.get('source', 'all'), daily: [], currency: store.get('currency', 'krw'), fx: null,
   items: [], open: new Set(), next: null, loading: false, done: false, generation: 0,
 };
 const filters = () => { const q = { source: state.source }; if (state.days) q.days = state.days; return q; };
@@ -203,6 +209,24 @@ $('toggle-table').addEventListener('click', (e) => {
   const t = $('chart-table'); t.hidden = !t.hidden;
   e.target.textContent = t.hidden ? '표로 보기' : '표 닫기'; e.target.setAttribute('aria-expanded', String(!t.hidden));
 });
+
+// Cost column: one unit for the whole column, switched in its header.
+function renderCurrency() {
+  for (const b of document.querySelectorAll('.unit-toggle button')) b.setAttribute('aria-pressed', String(b.dataset.cur === state.currency));
+  const fx = state.fx;
+  $('cost-head').title = 'API 정가 기준 추정 비용 (구독 요금제의 실제 청구와는 다릅니다)'
+    + (fx ? ` · 1$ = ${num(Math.round(fx.usd_krw * 100) / 100)}원 (${fx.source}${fx.date ? ', ' + fx.date : ''})` : '');
+}
+for (const b of document.querySelectorAll('.unit-toggle button')) {
+  b.addEventListener('click', () => { state.currency = b.dataset.cur; store.set('currency', state.currency); renderCurrency(); renderItems(); });
+}
+function money(usd) {
+  if (usd == null) return '–';
+  if (state.currency === 'usd') return usd >= 1 ? usd.toFixed(2) : usd >= 0.01 ? usd.toFixed(3) : usd.toFixed(4);
+  const krw = usd * (state.fx?.usd_krw ?? 1355);
+  return krw >= 100 ? Math.round(krw).toLocaleString('ko-KR') : krw >= 1 ? krw.toFixed(1) : krw.toFixed(2);
+}
+const shortModel = (m, source) => (!m || m === source ? '–' : m.replace(/-\d{8}$/, ''));
 
 function reload() {
   for (const b of $('days').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.days === state.days));
@@ -220,6 +244,7 @@ async function loadSummary() {
     sel.value = state.source;
     renderKpis(d.summary);
     state.daily = d.daily; renderChart(d.daily);
+    if (d.fx) { const first = !state.fx; state.fx = d.fx; renderCurrency(); if (first) renderItems(); }
     $('updated').textContent = '업데이트 ' + new Date().toLocaleTimeString('ko-KR');
   } catch { $('updated').textContent = '서버에 연결할 수 없습니다'; }
   finally { $('main').classList.remove('loading'); }
@@ -383,22 +408,22 @@ function statusCell(it) {
 function renderItems() {
   const body = $('items');
   body.replaceChildren();
-  // 순번 is the row's place in the list: the newest prompt is 1. `no` stays the paging cursor.
-  state.items.forEach((it, i) => {
+  for (const it of state.items) {
     const toggle = () => { state.open.has(it.no) ? state.open.delete(it.no) : state.open.add(it.no); renderItems(); };
     const done = it.status === 'SUCCEEDED';
     body.append(h('tr', { class: 'item', tabindex: 0, 'aria-expanded': String(state.open.has(it.no)), onclick: toggle,
                          onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } } },
-      h('td', { class: 'no num' }, i + 1),
       h('td', { class: 'no' }, when(it.created_at)),
-      h('td', {}, h('i', { class: 'dot', style: `background:${color(it.source)}` }), agentName(it.source)),
+      h('td', { style: 'white-space:nowrap' }, h('i', { class: 'dot', style: `background:${color(it.source)}` }), agentName(it.source)),
       h('td', { class: 'prompt', title: it.prompt }, it.prompt),
       h('td', {}, h('span', { class: 'badge' }, INTERACTION[it.interaction] || it.interaction)),
+      h('td', { class: 'model', title: it.model }, shortModel(it.model, it.source)),
       h('td', { class: 'num' }, done ? num(it.input_tokens + it.output_tokens) : '–'),
+      h('td', { class: 'num' }, done ? money(it.cost_usd) : '–'),
       h('td', { class: 'num' }, Number(it.prompt_score).toFixed(1)),
       h('td', {}, statusCell(it))));
-    if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 8 }, detail(it))));
-  });
+    if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 9 }, detail(it))));
+  }
 }
 
 function clampPre(text) {
@@ -452,6 +477,7 @@ function detail(it) {
       h('button', { class: 'btn', onclick: () => rate(false) }, '✕ 실패')) : null);
 }
 
+renderCurrency();
 reload();
 // New prompts show up on their own; skip a tick while the user is typing a score.
 setInterval(() => { if (!document.activeElement?.matches('input')) { loadSummary(); poll(); } }, 15000);

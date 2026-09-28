@@ -1,5 +1,6 @@
 mod analysis;
 mod mcp;
+mod pricing;
 mod track;
 mod web;
 
@@ -8,12 +9,12 @@ use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json,
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool};
-use std::{env, sync::Arc, time::Instant};
+use std::{env, sync::{Arc, Mutex}, time::Instant};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use uuid::Uuid;
 
 #[derive(Clone)]
-struct AppState { db: PgPool, http: reqwest::Client, cfg: Arc<Config> }
+struct AppState { db: PgPool, http: reqwest::Client, cfg: Arc<Config>, fx: Arc<Mutex<Option<(Instant, Value)>>> }
 
 struct Config { api_key: String, model: String, base_url: String, input_rate: f64, output_rate: f64 }
 
@@ -40,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         input_rate: env::var("MODEL_INPUT_USD_PER_MILLION").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0),
         output_rate: env::var("MODEL_OUTPUT_USD_PER_MILLION").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0),
     };
-    let state = AppState { db, http: reqwest::Client::new(), cfg: Arc::new(cfg) };
+    let state = AppState { db, http: reqwest::Client::new(), cfg: Arc::new(cfg), fx: Arc::default() };
     let app = Router::new()
         .route("/", get(web::index))
         .route("/v1/dashboard", get(web::dashboard))

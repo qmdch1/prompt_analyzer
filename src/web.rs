@@ -1,5 +1,5 @@
 //! Web dashboard: GET / serves one static page; the page fetches everything below with JS.
-use crate::{analysis::analyze_prompt, err, ApiResult, AppState};
+use crate::{analysis::analyze_prompt, err, pricing, ApiResult, AppState};
 use axum::{extract::{Query, State}, http::StatusCode, response::Html, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -16,7 +16,7 @@ fn internal(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) { err(Status
 /// Summary tiles and daily tokens for the filtered prompts.
 pub async fn dashboard(State(s): State<AppState>, Query(f): Query<Filter>) -> ApiResult<Json<Value>> {
     let source = f.source.filter(|v| v != "all");
-    let v: Value = sqlx::query_scalar(r#"
+    let mut v: Value = sqlx::query_scalar(r#"
         WITH tz AS (SELECT coalesce((SELECT name FROM pg_timezone_names WHERE name = $3), 'UTC') AS name),
         runs AS (
             SELECT r.*, coalesce(s.source, 'api') AS source FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
@@ -41,6 +41,7 @@ pub async fn dashboard(State(s): State<AppState>, Query(f): Query<Filter>) -> Ap
                      sum(r.input_tokens + r.output_tokens) AS tokens
               FROM runs r GROUP BY 1, 2) d), '[]'::jsonb))"#)
         .bind(source).bind(f.days).bind(f.tz).fetch_one(&s.db).await.map_err(internal)?;
+    v["fx"] = pricing::usd_krw(&s.http, &s.fx).await;
     Ok(Json(v))
 }
 
@@ -68,6 +69,9 @@ pub async fn prompts(State(s): State<AppState>, Query(f): Query<Filter>) -> ApiR
         r["tips"] = json!(a.suggestions);
         r["improved_prompt"] = json!(a.improved_prompt);
         r["improved_score"] = json!(a.improved_score);
+        let tokens = |k: &str| r[k].as_i64().unwrap_or(0);
+        let cost = pricing::cost_usd(r["model"].as_str().unwrap_or_default(), tokens("input_tokens"), tokens("cached_tokens"), tokens("output_tokens"));
+        r["cost_usd"] = json!(cost);
         r
     }).collect();
     Ok(Json(json!({"items": list, "next_before": next_before})))
