@@ -76,7 +76,6 @@ tr.detail > td { background: var(--page); padding: 12px; }
 .run { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
 .run:last-child { margin-bottom: 0; }
 .run-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
-.badge { white-space: nowrap; font-size: 12px; font-weight: 600; background: var(--raised); border-radius: 4px; padding: 1px 6px; }
 .meta { color: var(--ink-2); font-size: 12px; }
 .field { margin: 6px 0; }
 .field .k { color: var(--ink-2); font-size: 12px; }
@@ -148,7 +147,7 @@ tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: n
       <div class="scroll">
         <table>
           <thead><tr>
-            <th>시간</th><th>에이전트</th><th>프롬프트</th><th>유형</th><th>모델</th>
+            <th>시간</th><th>에이전트</th><th>프롬프트</th><th>모델</th>
             <th class="num">토큰</th>
             <th class="num" id="cost-head">비용 <span class="unit-toggle" role="group" aria-label="통화"><button data-cur="krw">원</button><button data-cur="usd">$</button></span></th>
             <th class="num" title="프롬프트 점수 = 명확성 40% + 구체성 35% + 구조 25%">점수</th><th>결과</th>
@@ -193,7 +192,6 @@ const ORDER = ['claude', 'codex', 'api'];
 // Color follows the agent, never its rank.
 const color = (src) => { const i = ORDER.indexOf(src); return i >= 0 ? `var(--series-${i + 1})` : 'var(--other)'; };
 const agentName = (src) => AGENTS[src] || src;
-const INTERACTION = { NEW_TASK: '새 작업', RETRY: '재시도', REFINE: '수정 요청' };
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const state = {
@@ -415,13 +413,12 @@ function renderItems() {
       h('td', { class: 'no' }, when(it.created_at)),
       h('td', { style: 'white-space:nowrap' }, h('i', { class: 'dot', style: `background:${color(it.source)}` }), agentName(it.source)),
       h('td', { class: 'prompt', title: it.prompt }, it.prompt),
-      h('td', {}, h('span', { class: 'badge' }, INTERACTION[it.interaction] || it.interaction)),
       h('td', { class: 'model', title: it.model }, shortModel(it.model, it.source)),
       h('td', { class: 'num' }, done ? num(it.input_tokens + it.output_tokens) : '–'),
       h('td', { class: 'num' }, done ? money(it.cost_usd) : '–'),
       h('td', { class: 'num' }, f0(it.prompt_score)),
       h('td', {}, statusCell(it))));
-    if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 9 }, detail(it))));
+    if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 8 }, detail(it))));
   }
 }
 
