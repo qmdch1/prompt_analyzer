@@ -131,9 +131,15 @@ python3 integrations/install.py
 - **"좋았어 90점"**, **"별로야"** → `rate_last_answer`: 직전 답변을 평가합니다
 - **"내 프롬프트 통계 보여줘"** → `prompt_stats`: 최근 작업의 토큰, 재시도 낭비, 성공률과 프롬프트 개선 팁을 보여줍니다
 
+연결이 잘 됐는지는 이 명령으로 확인합니다. 서버, 훅 등록, Codex 승인 여부, MCP, 에이전트별 마지막 기록 시각, 최근 오류를 보여주고, 안 된 항목에는 고치는 방법이 함께 나옵니다.
+
+```bash
+python3 integrations/install.py --check
+```
+
 알아둘 점
 
-- Codex는 처음 시작할 때 새 훅을 신뢰할지 묻습니다. 한 번 승인하면 됩니다.
+- Codex는 처음 시작할 때 새 훅을 신뢰할지 묻습니다. 한 번 승인해야 기록이 시작됩니다.
 - 서버가 꺼져 있어도 에이전트는 평소처럼 동작하고 기록만 빠집니다 (`~/.prompt-analyzer/hook.log`).
 - Claude Code의 서브에이전트가 쓴 토큰은 포함되지 않습니다.
 - 연결 해제: `python3 integrations/install.py --uninstall`
