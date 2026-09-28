@@ -97,13 +97,20 @@ pub async fn recompute_session(pool: &PgPool, session_id: Uuid) -> Result<()> {
 }
 
 /// Guesses how a follow-up prompt relates to the previous attempt in the same agent session.
+/// A correction sits where people put one — at the start ("아니 …", "다시 …", "PostgreSQL 말고 …") —
+/// or reads as a report that something broke. The same words deeper in a new instruction
+/// ("… 다크모드 말고 일반모드로 …") or used as a topic ("실패 기준이 뭐야?") are just content.
 pub fn infer_interaction(prompt: &str) -> &'static str {
-    let p = prompt.to_lowercase();
-    let has = |words: &[&str]| words.iter().any(|w| p.contains(w));
-    if has(&["다시", "재시도", "안 돼", "안돼", "안 되", "안되", "에러가", "에러 나", "에러났", "오류가", "오류 나", "오류났", "실패", "여전히", "아직도", "틀렸",
-             "again", "retry", "an error", "failed", "not working", "doesn't work", "still"]) {
+    let p = prompt.trim().to_lowercase();
+    let head: String = p.chars().take(25).collect();
+    let starts = |words: &[&str]| words.iter().any(|w| p.starts_with(w));
+    let has = |text: &str, words: &[&str]| words.iter().any(|w| text.contains(w));
+    if starts(&["다시", "재시도", "안돼", "안 돼", "안되", "안 되", "아직도", "여전히", "again", "retry", "still"])
+        || has(&p, &["에러가 나", "에러 나", "에러났", "오류가 나", "오류 나", "오류났", "안 되는데", "안되는데", "안 돼요", "안돼요",
+                     "없다는데", "안 나와", "안나와", "틀렸어", "잘못됐", "not working", "doesn't work", "it still", "still fail"]) {
         "RETRY"
-    } else if has(&["말고", "대신", "아니라", "아니고", "수정해", "고쳐", "바꿔", "빠졌", "빠져", "누락", "해야지", "instead", "rather", "missing"]) {
+    } else if (p.starts_with("아니") && !p.starts_with("아니면")) || p.starts_with("no,")
+        || has(&head, &["말고", "대신", "바꿔", "고쳐", "빠졌", "빠져", "누락", "해야지", "instead", "rather"]) {
         "REFINE"
     } else {
         "NEW_TASK"
@@ -135,9 +142,17 @@ mod tests {
             ("안돼 다시 해봐", "RETRY"),
             ("빌드하면 에러가 나", "RETRY"),
             ("it still fails", "RETRY"),
+            ("codex 훅 들어가니까 훅을 찾을 수 없다는데", "RETRY"),
             ("PostgreSQL 말고 SQLite로 바꿔", "REFINE"),
-            ("1,2,3,4를 자동으로 연결되게 해야지", "REFINE"),
+            ("1,2,3,4를 자동으로 연결되게 해야지 mcp나 뭐 이런거 연동되게 해줘", "REFINE"),
+            ("아니 제일 최신이 1번이지 #은 제거 해", "REFINE"),
             ("use axum instead", "REFINE"),
+            // Real prompts that used to be misread as corrections.
+            ("README에 실제 대시보드 내용을 최상단으로 옮기고 지금 localhost:8080 접속해서 나오는 데이터로 이미지 수정 해 다크모드 말고 일반모드로 작업 다되면 확인하고 커밋 푸시 해", "NEW_TASK"),
+            ("성공 실패 기준이 뭐야? 왜 응 걸러줘 그리고 원이랑 이거 실패로 나오는거지", "NEW_TASK"),
+            ("이거 만약 도커컴포즈로 실행했을때 기존 ai agent랑 연결 어떻게 해? 그내용 다 빠져있는데", "NEW_TASK"),
+            ("응 걸러줘 그리고 원이랑 달러에 소수점은 전부 제거해 정수만 쓸거야 점수도", "NEW_TASK"),
+            ("아니면 SQLite도 괜찮을까?", "NEW_TASK"),
         ] {
             assert_eq!(infer_interaction(prompt), expected, "{prompt}");
         }
