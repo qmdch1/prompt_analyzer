@@ -51,12 +51,16 @@
 ## 빠른 시작
 
 <p align="center">
-  <img src="docs/images/quick-start.svg" alt="Three step quick start" width="100%" />
+  <img src="docs/images/quick-start.svg" alt="Two step quick start" width="100%" />
 </p>
 
+**준비물**: Docker(Windows는 Docker Desktop + WSL2), Git, Python 3(WSL·Ubuntu·Mac에는 기본으로 있습니다), 그리고 쓰는 에이전트(Claude Code / Codex). 에이전트는 먼저 설치하고 로그인해 둡니다. Windows에서는 에이전트와 이 저장소를 모두 WSL(Ubuntu) 안에서 씁니다.
+
 ```bash
-docker compose up --build -d
-curl http://localhost:8080/health
+git clone https://github.com/qmdch1/prompt_analyzer.git
+cd prompt_analyzer
+docker compose up --build -d          # 서버 + DB (처음 빌드는 몇 분 걸립니다)
+python3 integrations/install.py       # Claude Code·Codex 자동 기록 연결
 ```
 
 `.env` 없이 바로 동작하고, DB 테이블은 API가 시작할 때 자동으로 만듭니다. 브라우저에서 **http://localhost:8080** 을 열면 대시보드가 보입니다.
@@ -79,6 +83,22 @@ curl http://localhost:8080/health
 
 ```bash
 git pull && docker compose up --build -d
+```
+
+### 다른 PC로 기록 옮기기
+
+기록은 Docker 볼륨(DB)에 있어서 `git clone`으로는 따라오지 않습니다. 옮기려면 기존 PC에서 백업하고,
+
+```bash
+docker compose exec -T postgres pg_dump -U prompt -d prompt_analyzer > prompt-analyzer.sql
+```
+
+새 PC에서는 서버를 띄우기 **전에** DB만 먼저 켜서 복원한 뒤 나머지를 띄웁니다.
+
+```bash
+docker compose up -d --wait postgres
+docker compose exec -T postgres psql -q -U prompt -d prompt_analyzer < prompt-analyzer.sql
+docker compose up --build -d
 ```
 
 Rust로 직접 실행하려면 DB만 띄우고 `cargo run` 하면 됩니다.
