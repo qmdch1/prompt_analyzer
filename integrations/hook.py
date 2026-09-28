@@ -47,11 +47,18 @@ def is_human_prompt(e):
     return isinstance(content, str) or not any(b.get("type") == "tool_result" for b in content or [])
 
 
+def is_final_answer(e):
+    m = e.get("message") or {}
+    return e.get("type") == "assistant" and not e.get("isSidechain") and m.get("stop_reason") not in (None, "tool_use")
+
+
 def claude_turn(transcript):
-    """Usage, final text and model of the last Claude Code turn (everything after the last human prompt),
-    plus whether its final message (stop_reason other than tool_use) has been written yet."""
+    """Usage, final text and model of the last Claude Code turn, plus whether its final message
+    (stop_reason other than tool_use) has been written yet. The turn starts after the previous
+    finished answer, so an interrupted attempt before the last prompt is counted too."""
     entries = read_jsonl(transcript)
-    start = max((i for i, e in enumerate(entries) if is_human_prompt(e)), default=-1)
+    last_prompt = max((i for i, e in enumerate(entries) if is_human_prompt(e)), default=-1)
+    start = max((i for i, e in enumerate(entries[:max(last_prompt, 0)]) if is_final_answer(e)), default=-1)
     usage, texts, model, done = {}, {}, None, False
     for e in entries[start + 1:]:
         if e.get("type") != "assistant" or e.get("isSidechain"):

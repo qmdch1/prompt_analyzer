@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt Analyzer</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --raised: #f3f2ee;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --other: #b5b3ac;
+  --good: #0ca30c; --critical: #d03b3b; --accent: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --raised: #242422;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --other: #5f5e5a;
+    --accent: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --raised: #242422;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --other: #5f5e5a;
+  --accent: #3987e5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; font-weight: 650; }
+h2 { font-size: 15px; margin: 0; font-weight: 600; }
+.sub, .muted { color: var(--ink-2); }
+.small { font-size: 12px; }
+.filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0 16px; }
+.seg { display: inline-flex; background: var(--raised); border-radius: 8px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+.seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
+select, input[type=number] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+main { transition: opacity .2s; }
+main.loading { opacity: .6; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.tile { padding: 14px 16px; }
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 600; margin: 2px 0; }
+.tile .note { color: var(--ink-2); font-size: 12px; }
+.card { padding: 16px; margin-bottom: 16px; }
+.card-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-head .spacer { flex: 1; }
+.legend { display: flex; gap: 14px; color: var(--ink-2); font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
+.chart svg { display: block; width: 100%; }
+.chart .col:focus { outline: none; }
+.chart .col:focus .hit, .chart .col:hover .hit { fill: var(--grid); opacity: .5; }
+.empty { color: var(--ink-2); padding: 28px 0; text-align: center; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 500; font-size: 12px; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.status { white-space: nowrap; }
+.status .icon { font-weight: 700; margin-right: 4px; }
+.tag { font-size: 11px; color: var(--ink-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+tr.detail > td { background: var(--page); padding: 12px; }
+.run { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.run:last-child { margin-bottom: 0; }
+.run-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
+.badge { font-size: 12px; font-weight: 600; background: var(--raised); border-radius: 4px; padding: 1px 6px; }
+.meta { color: var(--ink-2); font-size: 12px; }
+.field { margin: 6px 0; }
+.field .k { color: var(--ink-2); font-size: 12px; }
+pre { margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 7.5em; overflow: hidden; }
+pre.open { max-height: none; }
+.tips { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+.rate { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); font-size: 13px; }
+.rate input { width: 72px; }
+.btn { font: inherit; font-size: 13px; border: 1px solid var(--border); background: var(--raised); color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--axis); }
+.tooltip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); z-index: 10; min-width: 140px; }
+.tooltip .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.tooltip .key { display: inline-block; width: 12px; height: 2px; margin-right: 6px; vertical-align: middle; }
+.tooltip strong { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .tile .value { font-size: 24px; } }
+.no { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prompt { max-width: 440px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+tbody tr.item { cursor: pointer; }
+tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: none; }
+.more-state { color: var(--ink-2); text-align: center; padding: 14px 0 2px; font-size: 13px; }
+@media (max-width: 640px) { .prompt { max-width: 200px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Prompt Analyzer</h1>
+      <div class="sub">Claude Code · Codex 프롬프트가 토큰을 얼마나 효율적으로 쓰는지</div>
+    </div>
+    <span id="updated" class="muted small"></span>
+  </header>
+
+  <nav class="filters" aria-label="필터">
+    <div class="seg" role="radiogroup" aria-label="기간" id="days">
+      <button role="radio" data-days="1">오늘</button>
+      <button role="radio" data-days="7">7일</button>
+      <button role="radio" data-days="30">30일</button>
+      <button role="radio" data-days="">전체</button>
+    </div>
+    <label class="muted">에이전트 <select id="source"><option value="all">전체</option></select></label>
+  </nav>
+
+  <main id="main">
+    <section class="kpis" id="kpis" aria-label="요약"></section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>일별 토큰 사용량</h2>
+        <div class="legend" id="legend"></div>
+        <span class="spacer"></span>
+        <button class="link" id="toggle-table" aria-expanded="false">표로 보기</button>
+      </div>
+      <div class="chart" id="chart"></div>
+      <div class="scroll"><table id="chart-table" hidden></table></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>프롬프트 이력</h2>
+        <span class="muted small">최신순 · 스크롤하면 이전 이력을 더 불러옵니다 · 행을 누르면 응답과 토큰을 보고 평가할 수 있습니다</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th class="num">순번</th><th>시간</th><th>에이전트</th><th>프롬프트</th><th>유형</th>
+            <th class="num">토큰</th><th class="num">점수</th><th>결과</th>
+          </tr></thead>
+          <tbody id="items"></tbody>
+        </table>
+      </div>
+      <div class="more-state" id="more-state"></div>
+      <div id="sentinel" aria-hidden="true"></div>
+    </section>
+  </main>
+</div>
+<div class="tooltip" id="tip" role="tooltip" hidden></div>
+
+<script>
+// Opened straight from disk, the page talks to the local server.
+const API = location.protocol === 'file:' ? 'http://localhost:8080' : '';
+const $ = (id) => document.getElementById(id);
+// Builds DOM with text nodes only: prompts and responses are untrusted.
+function h(tag, props = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'style') el.style.cssText = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+const svg = (tag, attrs = {}) => { const el = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); return el; };
+const num = (n) => Number(n || 0).toLocaleString('ko-KR');
+const compact = (n) => new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0);
+const pad = (n) => String(n).padStart(2, '0');
+const when = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+const getJSON = async (path, params) => { const res = await fetch(`${API}${path}?${new URLSearchParams(params)}`); if (!res.ok) throw new Error(res.status); return res.json(); };
+
+const AGENTS = { claude: 'Claude', codex: 'Codex', api: 'API' };
+const ORDER = ['claude', 'codex', 'api'];
+// Color follows the agent, never its rank.
+const color = (src) => { const i = ORDER.indexOf(src); return i >= 0 ? `var(--series-${i + 1})` : 'var(--other)'; };
+const agentName = (src) => AGENTS[src] || src;
+const INTERACTION = { NEW_TASK: '새 작업', RETRY: '재시도', REFINE: '수정 요청' };
+const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const state = {
+  days: store.get('days', '7'), source: store.get('source', 'all'), daily: [],
+  items: [], open: new Set(), next: null, loading: false, done: false, generation: 0,
+};
+const filters = () => { const q = { source: state.source }; if (state.days) q.days = state.days; return q; };
+
+// ---------- filters: any change starts the history over
+for (const b of $('days').querySelectorAll('button')) b.addEventListener('click', () => { state.days = b.dataset.days; store.set('days', state.days); reload(); });
+$('source').addEventListener('change', (e) => { state.source = e.target.value; store.set('source', state.source); reload(); });
+$('toggle-table').addEventListener('click', (e) => {
+  const t = $('chart-table'); t.hidden = !t.hidden;
+  e.target.textContent = t.hidden ? '표로 보기' : '표 닫기'; e.target.setAttribute('aria-expanded', String(!t.hidden));
+});
+
+function reload() {
+  for (const b of $('days').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.days === state.days));
+  Object.assign(state, { items: [], open: new Set(), next: null, done: false, loading: false, generation: state.generation + 1 });
+  loadSummary();
+  loadMore();
+}
+
+async function loadSummary() {
+  $('main').classList.add('loading');  // keep the previous render while refetching
+  try {
+    const d = await getJSON('/v1/dashboard', { ...filters(), tz });
+    const sel = $('source'); const known = new Set([...sel.options].map((o) => o.value));
+    for (const s of d.sources) if (!known.has(s)) sel.append(h('option', { value: s }, agentName(s)));
+    sel.value = state.source;
+    renderKpis(d.summary);
+    state.daily = d.daily; renderChart(d.daily);
+    $('updated').textContent = '업데이트 ' + new Date().toLocaleTimeString('ko-KR');
+  } catch { $('updated').textContent = '서버에 연결할 수 없습니다'; }
+  finally { $('main').classList.remove('loading'); }
+}
+
+// ---------- KPI row
+function renderKpis(s) {
+  const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
+  const tiles = [
+    ['프롬프트', num(s.prompts), `작업 ${num(s.tasks)}개`],
+    ['총 토큰', compact(s.total_tokens), `이 중 캐시 ${pct(s.cached_tokens, s.total_tokens)}%`],
+    ['재시도 낭비', compact(s.retry_waste_tokens), `총 토큰의 ${pct(s.retry_waste_tokens, s.total_tokens)}%`],
+    ['첫 시도 성공률', s.first_try_success_pct == null ? '–' : `${s.first_try_success_pct}%`, `평가된 작업 ${num(s.evaluated_tasks)}개 기준`],
+    ['평균 프롬프트 점수', s.avg_prompt_score == null ? '–' : s.avg_prompt_score, '100점 만점'],
+  ];
+  $('kpis').replaceChildren(...tiles.map(([label, value, note]) =>
+    h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'note' }, note))));
+}
+
+// ---------- daily stacked columns
+function daysBetween(first, last) {
+  const out = []; const d = new Date(first + 'T00:00:00Z'); const end = new Date(last + 'T00:00:00Z');
+  while (d <= end) { out.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
+  return out;
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = 10 ** Math.floor(Math.log10(v)); const f = v / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+function topRounded(x, y, w, hgt, r) {
+  r = Math.min(r, hgt, w / 2);
+  return `M${x},${y + hgt}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + hgt}Z`;
+}
+
+function renderChart(daily) {
+  const chart = $('chart'); const legend = $('legend'); const table = $('chart-table');
+  const series = [...new Set(daily.map((r) => r.source))].sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
+  const byDay = new Map();
+  for (const r of daily) { if (!byDay.has(r.day)) byDay.set(r.day, {}); byDay.get(r.day)[r.source] = Number(r.tokens); }
+  const days = daily.length ? daysBetween(daily[0].day, daily[daily.length - 1].day) : [];
+
+  legend.replaceChildren(...(series.length > 1 ? series.map((s) => h('span', {}, h('i', { class: 'sw', style: `background:${color(s)}` }), agentName(s))) : []));
+  table.replaceChildren(
+    h('thead', {}, h('tr', {}, h('th', {}, '날짜'), ...series.map((s) => h('th', { class: 'num' }, agentName(s))), h('th', { class: 'num' }, '합계'))),
+    h('tbody', {}, ...days.map((day) => {
+      const v = byDay.get(day) || {};
+      return h('tr', {}, h('td', {}, day), ...series.map((s) => h('td', { class: 'num' }, num(v[s]))), h('td', { class: 'num' }, num(series.reduce((a, s) => a + (v[s] || 0), 0))));
+    })));
+
+  if (days.length < 2) {
+    chart.replaceChildren(h('div', { class: 'empty' }, days.length ? '이틀 이상 기록이 쌓이면 일별 추이가 여기에 표시됩니다.' : '이 기간에는 기록이 없습니다.'));
+    return;
+  }
+  const W = Math.max(chart.clientWidth, 320), H = 260, m = { t: 12, r: 8, b: 28, l: 52 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const totals = days.map((day) => series.reduce((a, s) => a + ((byDay.get(day) || {})[s] || 0), 0));
+  const max = niceMax(Math.max(...totals));
+  const y = (v) => m.t + ph - (v / max) * ph;
+  const band = pw / days.length, bw = Math.max(2, Math.min(24, band * 0.6));
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': '일별 토큰 사용량 막대 차트' });
+
+  for (let i = 0; i <= 4; i++) {  // recessive hairline grid with clean ticks
+    const v = (max / 4) * i, yy = Math.round(y(v)) + 0.5;
+    root.append(svg('line', { x1: m.l, x2: W - m.r, y1: yy, y2: yy, stroke: i === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1 }));
+    const t = svg('text', { x: m.l - 8, y: yy + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)' }); t.textContent = compact(v); root.append(t);
+  }
+  const every = Math.ceil(days.length / Math.max(1, Math.floor(pw / 56)));
+  days.forEach((day, i) => {
+    const cx = m.l + band * i + band / 2, x = cx - bw / 2;
+    const g = svg('g', { class: 'col', tabindex: 0, 'aria-label': `${day} ${num(totals[i])} 토큰` });
+    g.append(svg('rect', { class: 'hit', x: m.l + band * i, y: m.t, width: band, height: ph, fill: 'transparent' }));
+    let base = 0;
+    const present = series.filter((s) => ((byDay.get(day) || {})[s] || 0) > 0);
+    present.forEach((s, k) => {
+      const v = byDay.get(day)[s];
+      const top = y(base + v), bottom = y(base) - (k > 0 ? 2 : 0);  // 2px surface gap between segments
+      const hh = Math.max(0, bottom - top);
+      if (hh > 0) g.append(k === present.length - 1 ? svg('path', { d: topRounded(x, top, bw, hh, 4), fill: color(s) })
+                                                     : svg('rect', { x, y: top, width: bw, height: hh, fill: color(s) }));
+      base += v;
+    });
+    const show = (ev) => showTip(ev, day, present.map((s) => [s, byDay.get(day)[s]]), totals[i], g);
+    g.addEventListener('pointermove', show); g.addEventListener('focus', show);
+    g.addEventListener('pointerleave', hideTip); g.addEventListener('blur', hideTip);
+    root.append(g);
+    if (i % every === 0) {
+      const t = svg('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--muted)' });
+      t.textContent = `${Number(day.slice(5, 7))}/${Number(day.slice(8))}`; root.append(t);
+    }
+  });
+  chart.replaceChildren(root);
+}
+
+function showTip(ev, day, rows, total, anchor) {
+  const tip = $('tip');
+  tip.replaceChildren(
+    h('div', { class: 'muted', style: 'margin-bottom:4px' }, day),
+    ...rows.map(([s, v]) => h('div', { class: 'row' }, h('span', {}, h('i', { class: 'key', style: `background:${color(s)}` }), agentName(s)), h('strong', {}, num(v)))),
+    rows.length > 1 ? h('div', { class: 'row', style: 'margin-top:4px' }, h('span', { class: 'muted' }, '합계'), h('strong', {}, num(total))) : null);
+  tip.hidden = false;
+  const r = ev.clientX != null ? { x: ev.clientX, y: ev.clientY } : (() => { const b = anchor.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top }; })();
+  const w = tip.offsetWidth;
+  tip.style.left = Math.min(window.innerWidth - w - 8, Math.max(8, r.x + 14)) + 'px';
+  tip.style.top = Math.max(8, r.y - tip.offsetHeight - 10) + 'px';
+}
+function hideTip() { $('tip').hidden = true; }
+
+// ---------- prompt history: newest first, next page when the bottom scrolls into view
+async function loadMore() {
+  if (state.loading || state.done) return;
+  state.loading = true; renderMoreState();
+  const gen = state.generation;
+  try {
+    const page = await getJSON('/v1/prompts', { ...filters(), limit: 30, ...(state.next ? { before: state.next } : {}) });
+    if (gen !== state.generation) return;  // filters changed meanwhile
+    state.items.push(...page.items);
+    state.next = page.next_before; state.done = page.next_before == null;
+    renderItems();
+  } catch { $('more-state').textContent = '이력을 불러오지 못했습니다'; }
+  finally { if (gen === state.generation) { state.loading = false; renderMoreState(); } }
+  // Keep filling while the sentinel is still on screen (tall windows, short pages).
+  if (gen === state.generation && !state.done && $('sentinel').getBoundingClientRect().top < window.innerHeight + 400) loadMore();
+}
+new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); }, { rootMargin: '400px' }).observe($('sentinel'));
+
+// Polls the newest page: prepends new prompts and refreshes ones that were still running.
+async function poll() {
+  const gen = state.generation;
+  try {
+    const page = await getJSON('/v1/prompts', { ...filters(), limit: 30 });
+    if (gen !== state.generation) return;
+    const byNo = new Map(state.items.map((it, i) => [it.no, i]));
+    const top = state.items.length ? state.items[0].no : 0;
+    const fresh = page.items.filter((it) => it.no > top);
+    for (const it of page.items) if (byNo.has(it.no)) state.items[byNo.get(it.no)] = it;
+    const before = document.documentElement.scrollHeight;
+    state.items.unshift(...fresh);
+    renderItems();
+    if (fresh.length && window.scrollY > 0) window.scrollBy(0, document.documentElement.scrollHeight - before);  // don't jump
+  } catch {}
+}
+
+function renderMoreState() {
+  $('more-state').textContent = state.loading ? '불러오는 중…'
+    : !state.items.length ? '아직 기록이 없습니다. Claude Code나 Codex에서 프롬프트를 보내면 여기에 나타납니다.'
+    : state.done ? `처음 프롬프트까지 모두 불러왔습니다 (${num(state.items.length)}개)` : '';
+}
+
+function statusCell(it) {
+  const ev = it.evaluation;
+  if (it.status === 'DRAFT' || it.status === 'RUNNING') return h('span', { class: 'status muted' }, h('span', { class: 'icon' }, '…'), '진행 중');
+  if (!ev) return h('span', { class: 'status muted' }, h('span', { class: 'icon' }, '–'), '미평가');
+  const q = ev.quality_score != null ? h('span', { class: 'muted' }, ` · ${Number(ev.quality_score)}점`) : null;
+  const auto = ev.auto ? h('span', { class: 'tag', title: '다음 프롬프트를 보고 자동으로 추정했습니다' }, '자동') : null;
+  return ev.accepted
+    ? h('span', { class: 'status' }, h('span', { class: 'icon', style: 'color:var(--good)' }, '✓'), '성공', q, auto)
+    : h('span', { class: 'status' }, h('span', { class: 'icon', style: 'color:var(--critical)' }, '✕'), '실패', q, auto);
+}
+
+function renderItems() {
+  const body = $('items');
+  body.replaceChildren();
+  for (const it of state.items) {
+    const toggle = () => { state.open.has(it.no) ? state.open.delete(it.no) : state.open.add(it.no); renderItems(); };
+    const done = it.status === 'SUCCEEDED';
+    body.append(h('tr', { class: 'item', tabindex: 0, 'aria-expanded': String(state.open.has(it.no)), onclick: toggle,
+                         onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } } },
+      h('td', { class: 'no num' }, `#${it.no}`),
+      h('td', { class: 'no' }, when(it.created_at)),
+      h('td', {}, h('i', { class: 'dot', style: `background:${color(it.source)}` }), agentName(it.source)),
+      h('td', { class: 'prompt', title: it.prompt }, it.prompt),
+      h('td', {}, h('span', { class: 'badge' }, INTERACTION[it.interaction] || it.interaction)),
+      h('td', { class: 'num' }, done ? num(it.input_tokens + it.output_tokens) : '–'),
+      h('td', { class: 'num' }, Number(it.prompt_score).toFixed(1)),
+      h('td', {}, statusCell(it))));
+    if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 8 }, detail(it))));
+  }
+}
+
+function clampPre(text) {
+  const pre = h('pre', {}, text || '—');
+  const more = h('button', { class: 'link small', onclick: () => { pre.classList.toggle('open'); more.textContent = pre.classList.contains('open') ? '접기' : '더 보기'; } }, '더 보기');
+  requestAnimationFrame(() => { if (pre.scrollHeight <= pre.clientHeight + 2) more.remove(); });
+  return [pre, more];
+}
+
+function detail(it) {
+  const ev = it.evaluation;
+  const evText = !ev ? '아직 평가 없음' : `${ev.accepted ? '성공' : '실패'}${ev.quality_score != null ? ` · ${Number(ev.quality_score)}점` : ''}${ev.auto ? ' (자동 추정)' : ''}`;
+  const score = h('input', { type: 'number', min: 0, max: 100, value: ev?.quality_score != null ? Number(ev.quality_score) : 80, 'aria-label': '품질 점수' });
+  const rate = async (accepted) => {
+    const q = Math.max(0, Math.min(100, Number(score.value) || 0));
+    await fetch(`${API}/v1/runs/${it.id}/evaluate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quality_score: q, accepted }) });
+    await poll(); loadSummary();
+  };
+  const tokens = `입력 ${num(it.input_tokens)}${it.cached_tokens ? ` (캐시 ${num(it.cached_tokens)})` : ''} · 출력 ${num(it.output_tokens)}`;
+  return h('div', { class: 'run', onclick: (e) => e.stopPropagation() },
+    h('div', { class: 'run-head' },
+      h('span', { class: 'meta' }, [it.model, it.status === 'SUCCEEDED' ? tokens : '진행 중',
+        it.latency_ms != null ? `${(it.latency_ms / 1000).toFixed(1)}초` : null, `작업 안에서 ${it.sequence}번째 시도`].filter(Boolean).join(' · '))),
+    h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트'), ...clampPre(it.prompt)),
+    it.response ? h('div', { class: 'field' }, h('div', { class: 'k' }, '응답'), ...clampPre(it.response)) : null,
+    it.tips?.length ? h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트 개선 팁'), h('ul', { class: 'tips' }, ...it.tips.map((t) => h('li', {}, t)))) : null,
+    it.status === 'SUCCEEDED' ? h('div', { class: 'rate' },
+      h('span', { class: 'muted' }, `평가: ${evText}`), h('span', { style: 'flex:1' }),
+      h('label', { class: 'muted' }, '점수 ', score),
+      h('button', { class: 'btn', onclick: () => rate(true) }, '✓ 성공'),
+      h('button', { class: 'btn', onclick: () => rate(false) }, '✕ 실패')) : null);
+}
+
+reload();
+// New prompts show up on their own; skip a tick while the user is typing a score.
+setInterval(() => { if (!document.activeElement?.matches('input')) { loadSummary(); poll(); } }, 15000);
+window.addEventListener('resize', () => renderChart(state.daily));
+</script>
+</body>
+</html>

@@ -18,19 +18,27 @@ pub async fn track_prompt(State(s): State<AppState>, Json(p): Json<TrackPrompt>)
     let mut tx = s.db.begin().await.map_err(internal)?;
     let current: Option<Uuid> = sqlx::query_scalar("SELECT id FROM sessions WHERE source=$1 AND external_id=$2 ORDER BY created_at DESC LIMIT 1 FOR UPDATE")
         .bind(&p.source).bind(&p.external_id).fetch_optional(&mut *tx).await.map_err(internal)?;
-    let last: Option<(Uuid, Uuid, i32)> = match current {
-        Some(id) => sqlx::query_as("SELECT id, session_id, sequence FROM prompt_runs WHERE session_id=$1 ORDER BY sequence DESC LIMIT 1").bind(id).fetch_optional(&mut *tx).await.map_err(internal)?,
+    let last: Option<(Uuid, Uuid, i32, String)> = match current {
+        Some(id) => sqlx::query_as("SELECT id, session_id, sequence, status::text FROM prompt_runs WHERE session_id=$1 ORDER BY sequence DESC LIMIT 1").bind(id).fetch_optional(&mut *tx).await.map_err(internal)?,
         None => None,
     };
+    // Sent while the agent is still answering (or after an interrupted answer): same attempt, one run.
+    if let Some((run_id, session_id, _, status)) = &last {
+        if status == "DRAFT" || status == "RUNNING" {
+            sqlx::query("UPDATE prompt_runs SET prompt = prompt || E'\\n\\n' || $2 WHERE id = $1").bind(run_id).bind(&p.prompt).execute(&mut *tx).await.map_err(internal)?;
+            tx.commit().await.map_err(internal)?;
+            return Ok(Json(json!({"session_id": session_id, "run_id": run_id, "merged": true, "analysis": analysis})));
+        }
+    }
     let interaction = if last.is_some() { infer_interaction(&p.prompt) } else { "NEW_TASK" };
     // Step 4 estimate: moving on to a new task means the last attempt worked, asking again means it did not.
     // Explicit ratings are never overwritten.
-    if let Some((run_id, _, _)) = last {
+    if let Some((run_id, _, _, _)) = last {
         sqlx::query("INSERT INTO evaluations(run_id, accepted, reason, auto) VALUES($1, $2, 'auto', true) ON CONFLICT(run_id) DO NOTHING")
             .bind(run_id).bind(interaction == "NEW_TASK").execute(&mut *tx).await.map_err(internal)?;
     }
     let (session_id, previous_run_id, sequence) = match last {
-        Some((run_id, session_id, seq)) if interaction != "NEW_TASK" => (session_id, Some(run_id), seq + 1),
+        Some((run_id, session_id, seq, _)) if interaction != "NEW_TASK" => (session_id, Some(run_id), seq + 1),
         _ => {
             let goal: String = p.prompt.chars().take(200).collect();
             let id: Uuid = sqlx::query_scalar("INSERT INTO sessions(goal, source, external_id) VALUES($1,$2,$3) RETURNING id")
@@ -42,7 +50,7 @@ pub async fn track_prompt(State(s): State<AppState>, Json(p): Json<TrackPrompt>)
     let run_id: Uuid = sqlx::query_scalar(r#"INSERT INTO prompt_runs(session_id,previous_run_id,sequence,interaction,prompt,model,estimated_input_tokens,clarity_score,specificity_score,structure_score,prompt_score) VALUES($1,$2,$3,$4::interaction_type,$5,$6,$7,$8,$9,$10,$11) RETURNING id"#)
         .bind(session_id).bind(previous_run_id).bind(sequence).bind(interaction).bind(&p.prompt).bind(&model).bind(analysis.estimated_tokens).bind(analysis.clarity_score).bind(analysis.specificity_score).bind(analysis.structure_score).bind(analysis.prompt_score).fetch_one(&mut *tx).await.map_err(internal)?;
     tx.commit().await.map_err(internal)?;
-    if let Some((_, prev_session, _)) = last { recompute_session(&s.db, prev_session).await.map_err(internal)?; }
+    if let Some((_, prev_session, _, _)) = last { recompute_session(&s.db, prev_session).await.map_err(internal)?; }
     recompute_session(&s.db, session_id).await.map_err(internal)?;
     Ok(Json(json!({"session_id": session_id, "run_id": run_id, "interaction": interaction, "analysis": analysis})))
 }

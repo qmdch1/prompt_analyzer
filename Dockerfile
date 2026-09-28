@@ -3,6 +3,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
+COPY web ./web
 RUN cargo build --release
 
 FROM debian:bookworm-slim

@@ -45,11 +45,18 @@ docker compose up --build -d
 curl http://localhost:8080/health
 ```
 
-`.env` 없이 바로 동작하고, DB 테이블은 API가 시작할 때 자동으로 만듭니다.
+`.env` 없이 바로 동작하고, DB 테이블은 API가 시작할 때 자동으로 만듭니다. 브라우저에서 **http://localhost:8080** 을 열면 대시보드가 보입니다.
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Prompt Analyzer dashboard" width="100%" />
+</p>
+
+대시보드는 요약 지표, 일별 토큰 차트, 프롬프트 이력을 보여줍니다. 이력은 최신순이고 순번이 붙으며, 스크롤하면 이전 기록을 자동으로 더 불러옵니다. 행을 누르면 응답·토큰·개선 팁을 보고 그 자리에서 성공/실패를 평가할 수 있습니다. 새 프롬프트는 15초마다 자동으로 추가됩니다.
 
 | 서비스 | 주소 |
 |---|---|
-| REST API | `http://localhost:8080` |
+| 대시보드 | `http://localhost:8080` |
+| REST API | `http://localhost:8080/v1/...` |
 | PostgreSQL | `localhost:5432` (`prompt` / `prompt`) |
 
 Rust로 직접 실행하려면 DB만 띄우고 `cargo run` 하면 됩니다.
@@ -68,7 +75,7 @@ docker compose up --build -d
 python3 integrations/install.py
 ```
 
-그다음 Claude Code나 Codex를 새로 시작하면 모든 프롬프트가 자동으로 기록됩니다.
+그다음 Claude Code나 Codex를 새로 시작하면 모든 프롬프트가 자동으로 기록되고, 대시보드(`http://localhost:8080`)에서 바로 볼 수 있습니다.
 
 | 단계 | 방식 | 하는 일 |
 |---|---|---|
@@ -148,6 +155,8 @@ src/main.rs         REST API + 선택적 AI 호출
 src/analysis.rs     프롬프트 점수 + 세션 효율 계산 + 재시도 추정
 src/track.rs        에이전트 자동 기록 (훅이 호출)
 src/mcp.rs          MCP 서버 (/mcp/claude, /mcp/codex)
+src/web.rs          대시보드 API (/v1/dashboard, /v1/prompts)
+web/index.html      대시보드 화면 (정적 HTML + JS)
 integrations/       Claude Code·Codex 훅과 설치 스크립트
 migrations/         PostgreSQL 스키마 (시작 시 자동 적용)
 compose.yaml        postgres + api

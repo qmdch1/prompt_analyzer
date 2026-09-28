@@ -1,6 +1,7 @@
 mod analysis;
 mod mcp;
 mod track;
+mod web;
 
 use analysis::{analyze_prompt, recompute_session, PromptAnalysis};
 use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
@@ -41,6 +42,9 @@ async fn main() -> anyhow::Result<()> {
     };
     let state = AppState { db, http: reqwest::Client::new(), cfg: Arc::new(cfg) };
     let app = Router::new()
+        .route("/", get(web::index))
+        .route("/v1/dashboard", get(web::dashboard))
+        .route("/v1/prompts", get(web::prompts))
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
         .route("/v1/sessions", post(create_session))
         .route("/v1/sessions/{id}", get(get_session))
