@@ -101,6 +101,10 @@ pre.open { max-height: none; }
 .prompt { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 tbody tr.item { cursor: pointer; }
 tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: none; }
+table.breakdown tr.total td, table.mini tr.total td { font-weight: 600; border-top: 1px solid var(--axis); }
+table.breakdown tbody tr:last-child td { border-bottom: 0; }
+table.mini { width: auto; min-width: 360px; font-size: 13px; margin-top: 4px; }
+table.mini th, table.mini td { padding: 4px 12px 4px 0; }
 .more-state { color: var(--ink-2); text-align: center; padding: 14px 0 2px; font-size: 13px; }
 @media (max-width: 640px) { .prompt { max-width: 200px; } }
 </style>
@@ -130,6 +134,23 @@ tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: n
 
     <section class="card">
       <div class="card-head">
+        <h2>토큰·비용 구성</h2>
+        <span class="muted small">캐시 입력은 앞서 보낸 대화를 다시 보낸 부분으로, 일반 입력보다 훨씬 싸게 청구됩니다</span>
+      </div>
+      <div class="scroll">
+        <table class="breakdown">
+          <thead><tr>
+            <th>구분</th><th class="num">토큰</th><th class="num">토큰 비중</th>
+            <th class="num cost-head">비용 <span class="unit-toggle" role="group" aria-label="통화"><button data-cur="krw">원</button><button data-cur="usd">$</button></span></th><th class="num">비용 비중</th>
+          </tr></thead>
+          <tbody id="breakdown"></tbody>
+        </table>
+      </div>
+      <div class="muted small" id="breakdown-note" hidden></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <h2>일별 토큰 사용량</h2>
         <div class="legend" id="legend"></div>
         <span class="spacer"></span>
@@ -149,7 +170,7 @@ tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: n
           <thead><tr>
             <th>시간</th><th>에이전트</th><th>프롬프트</th><th>모델</th>
             <th class="num">토큰</th>
-            <th class="num" id="cost-head">비용 <span class="unit-toggle" role="group" aria-label="통화"><button data-cur="krw">원</button><button data-cur="usd">$</button></span></th>
+            <th class="num cost-head">비용 <span class="unit-toggle" role="group" aria-label="통화"><button data-cur="krw">원</button><button data-cur="usd">$</button></span></th>
             <th class="num" title="프롬프트 점수 = 명확성 40% + 구체성 35% + 구조 25%">점수</th><th>결과</th>
           </tr></thead>
           <tbody id="items"></tbody>
@@ -195,7 +216,7 @@ const agentName = (src) => AGENTS[src] || src;
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const state = {
-  days: store.get('days', '7'), source: store.get('source', 'all'), daily: [], currency: store.get('currency', 'krw'), fx: null,
+  days: store.get('days', '7'), source: store.get('source', 'all'), daily: [], currency: store.get('currency', 'krw'), fx: null, breakdown: null,
   items: [], open: new Set(), next: null, loading: false, done: false, generation: 0,
 };
 const filters = () => { const q = { source: state.source }; if (state.days) q.days = state.days; return q; };
@@ -212,11 +233,12 @@ $('toggle-table').addEventListener('click', (e) => {
 function renderCurrency() {
   for (const b of document.querySelectorAll('.unit-toggle button')) b.setAttribute('aria-pressed', String(b.dataset.cur === state.currency));
   const fx = state.fx;
-  $('cost-head').title = 'API 정가 기준 추정 비용 (구독 요금제의 실제 청구와는 다릅니다)'
+  const title = 'API 정가 기준 추정 비용 (구독 요금제의 실제 청구와는 다릅니다)'
     + (fx ? ` · 1$ = ${num(Math.round(fx.usd_krw * 100) / 100)}원 (${fx.source}${fx.date ? ', ' + fx.date : ''})` : '');
+  for (const th of document.querySelectorAll('.cost-head')) th.title = title;
 }
 for (const b of document.querySelectorAll('.unit-toggle button')) {
-  b.addEventListener('click', () => { state.currency = b.dataset.cur; store.set('currency', state.currency); renderCurrency(); renderItems(); });
+  b.addEventListener('click', () => { state.currency = b.dataset.cur; store.set('currency', state.currency); renderCurrency(); renderItems(); renderBreakdown(state.breakdown); });
 }
 // Whole numbers only, in both currencies.
 function money(usd) {
@@ -242,9 +264,24 @@ async function loadSummary() {
     renderKpis(d.summary);
     state.daily = d.daily; renderChart(d.daily);
     if (d.fx) { const first = !state.fx; state.fx = d.fx; renderCurrency(); if (first) renderItems(); }
+    state.breakdown = d.breakdown; renderBreakdown(d.breakdown);
     $('updated').textContent = '업데이트 ' + new Date().toLocaleTimeString('ko-KR');
   } catch { $('updated').textContent = '서버에 연결할 수 없습니다'; }
   finally { $('main').classList.remove('loading'); }
+}
+
+// ---------- cached input / fresh input / output, in tokens and money
+const PARTS = [['cached', '캐시에서 다시 읽은 입력'], ['fresh', '새로 보낸 입력'], ['output', '출력 (AI가 쓴 답)']];
+const pct = (a, b) => (!b ? '–' : a > 0 && (100 * a) / b < 0.5 ? '<1%' : `${Math.round((100 * a) / b)}%`);
+function renderBreakdown(b) {
+  if (!b) return;
+  const tokens = PARTS.reduce((a, [k]) => a + b[k].tokens, 0), usd = PARTS.reduce((a, [k]) => a + b[k].usd, 0);
+  const row = (label, t, u, cls) => h('tr', { class: cls }, h('td', {}, label), h('td', { class: 'num' }, num(t)),
+    h('td', { class: 'num' }, pct(t, tokens)), h('td', { class: 'num' }, money(u)), h('td', { class: 'num' }, pct(u, usd)));
+  $('breakdown').replaceChildren(...PARTS.map(([k, label]) => row(label, b[k].tokens, b[k].usd)), row('합계', tokens, usd, 'total'));
+  const note = $('breakdown-note');
+  note.hidden = !b.unpriced_tokens;
+  note.textContent = b.unpriced_tokens ? `가격 정보가 없는 모델의 ${num(b.unpriced_tokens)}토큰은 비용에서 빠져 있습니다.` : '';
 }
 
 // ---------- KPI row
@@ -454,12 +491,18 @@ function detail(it) {
     await fetch(`${API}/v1/runs/${it.id}/evaluate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quality_score: q, accepted }) });
     await poll(); loadSummary();
   };
-  const tokens = `입력 ${num(it.input_tokens)}${it.cached_tokens ? ` (캐시 ${num(it.cached_tokens)})` : ''} · 출력 ${num(it.output_tokens)}`;
+  const parts = it.cost_parts;
+  const split = { cached: it.cached_tokens, fresh: Math.max(0, it.input_tokens - it.cached_tokens), output: it.output_tokens };
+  const costTable = h('table', { class: 'mini' },
+    h('thead', {}, h('tr', {}, h('th', {}, '구분'), h('th', { class: 'num' }, '토큰'), h('th', { class: 'num' }, `비용 (${state.currency === 'usd' ? '$' : '원'})`))),
+    h('tbody', {}, ...PARTS.map(([k, label]) => h('tr', {}, h('td', {}, label), h('td', { class: 'num' }, num(split[k])), h('td', { class: 'num' }, parts ? money(parts[k]) : '–'))),
+      h('tr', { class: 'total' }, h('td', {}, '합계'), h('td', { class: 'num' }, num(it.input_tokens + it.output_tokens)), h('td', { class: 'num' }, money(it.cost_usd)))));
   return h('div', { class: 'run', onclick: (e) => e.stopPropagation() },
     h('div', { class: 'run-head' },
-      h('span', { class: 'meta' }, [it.model, it.status === 'SUCCEEDED' ? tokens : '진행 중',
+      h('span', { class: 'meta' }, [it.model, it.status === 'SUCCEEDED' ? null : '진행 중',
         it.latency_ms != null ? `${(it.latency_ms / 1000).toFixed(1)}초` : null, `작업 안에서 ${it.sequence}번째 시도`].filter(Boolean).join(' · '))),
     h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트'), ...clampPre(it.prompt)),
+    it.status === 'SUCCEEDED' ? h('div', { class: 'field' }, h('div', { class: 'k' }, '토큰·비용'), costTable) : null,
     it.response ? h('div', { class: 'field' }, h('div', { class: 'k' }, '응답'), ...clampPre(it.response)) : null,
     h('div', { class: 'field' }, h('div', { class: 'k' }, '점수 구성'),
       h('div', { class: 'meta' }, `${f0(it.prompt_score)}점 = 명확성 ${f0(it.clarity_score)} × 40% + 구체성 ${f0(it.specificity_score)} × 35% + 구조 ${f0(it.structure_score)} × 25%`)),

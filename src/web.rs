@@ -40,9 +40,37 @@ pub async fn dashboard(State(s): State<AppState>, Query(f): Query<Filter>) -> Ap
               SELECT to_char(r.created_at AT TIME ZONE (SELECT name FROM tz), 'YYYY-MM-DD') AS day, r.source,
                      sum(r.input_tokens + r.output_tokens) AS tokens
               FROM runs r GROUP BY 1, 2) d), '[]'::jsonb))"#)
-        .bind(source).bind(f.days).bind(f.tz).fetch_one(&s.db).await.map_err(internal)?;
+        .bind(&source).bind(f.days).bind(f.tz).fetch_one(&s.db).await.map_err(internal)?;
+    v["breakdown"] = breakdown(&s, &source, f.days).await?;
     v["fx"] = pricing::usd_krw(&s.http, &s.fx).await;
     Ok(Json(v))
+}
+
+/// Tokens and cost split into cached input, fresh input, and output, priced per model.
+async fn breakdown(s: &AppState, source: &Option<String>, days: Option<i32>) -> ApiResult<Value> {
+    let per_model: Vec<(String, i64, i64, i64)> = sqlx::query_as(r#"
+        SELECT r.model, sum(r.input_tokens)::bigint, sum(r.cached_tokens)::bigint, sum(r.output_tokens)::bigint
+        FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
+        WHERE r.status = 'SUCCEEDED'
+          AND ($1::text IS NULL OR coalesce(s.source, 'api') = $1)
+          AND ($2::int IS NULL OR r.created_at >= now() - make_interval(days => $2))
+        GROUP BY r.model"#)
+        .bind(source).bind(days).fetch_all(&s.db).await.map_err(internal)?;
+    let (mut cached, mut fresh, mut output, mut unpriced) = (0i64, 0i64, 0i64, 0i64);
+    let mut cost = pricing::Cost::default();
+    for (model, input, c, o) in per_model {
+        cached += c; fresh += (input - c).max(0); output += o;
+        match pricing::cost(&model, input, c, o) {
+            Some(p) => { cost.cached += p.cached; cost.fresh += p.fresh; cost.output += p.output; }
+            None => unpriced += input + o,
+        }
+    }
+    Ok(json!({
+        "cached": {"tokens": cached, "usd": cost.cached},
+        "fresh": {"tokens": fresh, "usd": cost.fresh},
+        "output": {"tokens": output, "usd": cost.output},
+        "unpriced_tokens": unpriced,
+    }))
 }
 
 /// Prompt history, newest first. Page down with `before=<last no>`, poll for new ones with `after=<first no>`.
@@ -70,8 +98,9 @@ pub async fn prompts(State(s): State<AppState>, Query(f): Query<Filter>) -> ApiR
         r["improved_prompt"] = json!(a.improved_prompt);
         r["improved_score"] = json!(a.improved_score);
         let tokens = |k: &str| r[k].as_i64().unwrap_or(0);
-        let cost = pricing::cost_usd(r["model"].as_str().unwrap_or_default(), tokens("input_tokens"), tokens("cached_tokens"), tokens("output_tokens"));
-        r["cost_usd"] = json!(cost);
+        let cost = pricing::cost(r["model"].as_str().unwrap_or_default(), tokens("input_tokens"), tokens("cached_tokens"), tokens("output_tokens"));
+        r["cost_usd"] = json!(cost.map(|c| c.total()));
+        r["cost_parts"] = json!(cost.map(|c| json!({"cached": c.cached, "fresh": c.fresh, "output": c.output})));
         r
     }).collect();
     Ok(Json(json!({"items": list, "next_before": next_before})))

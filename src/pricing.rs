@@ -31,11 +31,19 @@ const PRICES: &[(&str, f64, f64, f64)] = &[
     ("gpt-5", 1.25, 0.125, 10.0),
 ];
 
+/// USD cost of one run (or a sum of runs of one model), split the way it is billed.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct Cost { pub fresh: f64, pub cached: f64, pub output: f64 }
+
+impl Cost {
+    pub fn total(&self) -> f64 { self.fresh + self.cached + self.output }
+}
+
 /// `input` includes `cached`, as both agents report it. None for a model without a known price.
-pub fn cost_usd(model: &str, input: i64, cached: i64, output: i64) -> Option<f64> {
+pub fn cost(model: &str, input: i64, cached: i64, output: i64) -> Option<Cost> {
     let (_, fresh_rate, cached_rate, output_rate) = PRICES.iter().find(|(prefix, ..)| model.starts_with(prefix))?;
-    let fresh = (input - cached).max(0) as f64;
-    Some((fresh * fresh_rate + cached as f64 * cached_rate + output as f64 * output_rate) / 1_000_000.0)
+    let per_token = |tokens: i64, rate: f64| tokens.max(0) as f64 * rate / 1_000_000.0;
+    Some(Cost { fresh: per_token(input - cached, *fresh_rate), cached: per_token(cached, *cached_rate), output: per_token(output, *output_rate) })
 }
 
 const FX_TTL: Duration = Duration::from_secs(3600);
@@ -62,7 +70,11 @@ pub async fn usd_krw(http: &reqwest::Client, cache: &Mutex<Option<(Instant, Valu
 
 #[cfg(test)]
 mod tests {
-    use super::cost_usd;
+    use super::{cost, Cost};
+
+    fn cost_usd(model: &str, input: i64, cached: i64, output: i64) -> Option<f64> {
+        cost(model, input, cached, output).map(|c| c.total())
+    }
 
     #[test]
     fn prices_by_most_specific_model_prefix() {
@@ -70,7 +82,9 @@ mod tests {
         assert_eq!(cost_usd("claude-opus-5-5", 2_000_000, 1_000_000, 1_000_000), Some(24.2));
         assert_eq!(cost_usd("claude-haiku-4-5-20251001", 1_000_000, 0, 0), Some(1.0));
         assert_eq!(cost_usd("gpt-5.6-sol", 1_000_000, 0, 0), Some(4.0));  // not the gpt-5 row
-        assert_eq!(cost_usd("gpt-6-astra", 16_804, 7_168, 7), Some((9_636.0 * 10.0 + 7_168.0 * 1.0 + 7.0 * 50.0) / 1e6));
+        let astra = cost_usd("gpt-6-astra", 16_804, 7_168, 7).unwrap();
+        assert!((astra - (9_636.0 * 10.0 + 7_168.0 * 1.0 + 7.0 * 50.0) / 1e6).abs() < 1e-12);
         assert_eq!(cost_usd("claude", 0, 0, 0), None);
+        assert_eq!(cost("claude-opus-5-5", 2_000_000, 1_000_000, 1_000_000), Some(Cost { fresh: 4.0, cached: 0.2, output: 20.0 }));
     }
 }
