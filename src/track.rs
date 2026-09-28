@@ -101,6 +101,10 @@ pub async fn stats(db: &PgPool, source: &str, limit: i64) -> anyhow::Result<Valu
         .bind(source).bind(limit).fetch_one(db).await?;
     let latest: Option<String> = sqlx::query_scalar("SELECT r.prompt FROM prompt_runs r JOIN sessions s ON s.id=r.session_id WHERE s.source=$1 ORDER BY r.created_at DESC LIMIT 1")
         .bind(source).fetch_optional(db).await?;
-    if let Some(prompt) = latest { v["latest_prompt_tips"] = json!(analyze_prompt(&prompt).suggestions); }
+    if let Some(prompt) = latest {
+        let a = analyze_prompt(&prompt);
+        v["latest_prompt_tips"] = json!(a.suggestions);
+        v["latest_prompt_improved"] = json!(a.improved_prompt);
+    }
     Ok(v)
 }

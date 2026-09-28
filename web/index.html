@@ -76,13 +76,15 @@ tr.detail > td { background: var(--page); padding: 12px; }
 .run { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
 .run:last-child { margin-bottom: 0; }
 .run-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
-.badge { font-size: 12px; font-weight: 600; background: var(--raised); border-radius: 4px; padding: 1px 6px; }
+.badge { white-space: nowrap; font-size: 12px; font-weight: 600; background: var(--raised); border-radius: 4px; padding: 1px 6px; }
 .meta { color: var(--ink-2); font-size: 12px; }
 .field { margin: 6px 0; }
 .field .k { color: var(--ink-2); font-size: 12px; }
 pre { margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 7.5em; overflow: hidden; }
 pre.open { max-height: none; }
 .tips { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+.improved { background: var(--raised); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.improved-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
 .rate { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); font-size: 13px; }
 .rate input { width: 72px; }
 .btn { font: inherit; font-size: 13px; border: 1px solid var(--border); background: var(--raised); color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -143,7 +145,7 @@ tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: n
         <table>
           <thead><tr>
             <th class="num">순번</th><th>시간</th><th>에이전트</th><th>프롬프트</th><th>유형</th>
-            <th class="num">토큰</th><th class="num">점수</th><th>결과</th>
+            <th class="num">토큰</th><th class="num" title="프롬프트 점수 = 명확성 40% + 구체성 35% + 구조 25%">점수</th><th>결과</th>
           </tr></thead>
           <tbody id="items"></tbody>
         </table>
@@ -381,12 +383,13 @@ function statusCell(it) {
 function renderItems() {
   const body = $('items');
   body.replaceChildren();
-  for (const it of state.items) {
+  // 순번 is the row's place in the list: the newest prompt is 1. `no` stays the paging cursor.
+  state.items.forEach((it, i) => {
     const toggle = () => { state.open.has(it.no) ? state.open.delete(it.no) : state.open.add(it.no); renderItems(); };
     const done = it.status === 'SUCCEEDED';
     body.append(h('tr', { class: 'item', tabindex: 0, 'aria-expanded': String(state.open.has(it.no)), onclick: toggle,
                          onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } } },
-      h('td', { class: 'no num' }, `#${it.no}`),
+      h('td', { class: 'no num' }, i + 1),
       h('td', { class: 'no' }, when(it.created_at)),
       h('td', {}, h('i', { class: 'dot', style: `background:${color(it.source)}` }), agentName(it.source)),
       h('td', { class: 'prompt', title: it.prompt }, it.prompt),
@@ -395,7 +398,7 @@ function renderItems() {
       h('td', { class: 'num' }, Number(it.prompt_score).toFixed(1)),
       h('td', {}, statusCell(it))));
     if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 8 }, detail(it))));
-  }
+  });
 }
 
 function clampPre(text) {
@@ -403,6 +406,23 @@ function clampPre(text) {
   const more = h('button', { class: 'link small', onclick: () => { pre.classList.toggle('open'); more.textContent = pre.classList.contains('open') ? '접기' : '더 보기'; } }, '더 보기');
   requestAnimationFrame(() => { if (pre.scrollHeight <= pre.clientHeight + 2) more.remove(); });
   return [pre, more];
+}
+
+const f0 = (n) => Math.round(Number(n));
+const f1 = (n) => Number(n).toFixed(1);
+
+function improvedBlock(it) {
+  const copy = h('button', { class: 'btn', onclick: async () => {
+    try { await navigator.clipboard.writeText(it.improved_prompt); copy.textContent = '복사됨'; }
+    catch { copy.textContent = '복사 실패 — 직접 선택해 주세요'; }
+    setTimeout(() => { copy.textContent = '복사'; }, 1500);
+  } }, '복사');
+  const gain = it.improved_score - it.prompt_score;
+  return h('div', { class: 'field improved' },
+    h('div', { class: 'improved-head' }, h('span', { class: 'k' }, '개선 프롬프트'),
+      h('span', { class: 'meta' }, `예상 점수 ${f1(it.improved_score)}점 (${gain >= 0 ? '+' : ''}${f1(gain)}) · [ ] 부분을 채워서 쓰세요`),
+      h('span', { style: 'flex:1' }), copy),
+    h('pre', { class: 'open' }, it.improved_prompt));
 }
 
 function detail(it) {
@@ -421,7 +441,10 @@ function detail(it) {
         it.latency_ms != null ? `${(it.latency_ms / 1000).toFixed(1)}초` : null, `작업 안에서 ${it.sequence}번째 시도`].filter(Boolean).join(' · '))),
     h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트'), ...clampPre(it.prompt)),
     it.response ? h('div', { class: 'field' }, h('div', { class: 'k' }, '응답'), ...clampPre(it.response)) : null,
+    h('div', { class: 'field' }, h('div', { class: 'k' }, '점수 구성'),
+      h('div', { class: 'meta' }, `${f1(it.prompt_score)}점 = 명확성 ${f0(it.clarity_score)} × 40% + 구체성 ${f0(it.specificity_score)} × 35% + 구조 ${f0(it.structure_score)} × 25%`)),
     it.tips?.length ? h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트 개선 팁'), h('ul', { class: 'tips' }, ...it.tips.map((t) => h('li', {}, t)))) : null,
+    it.improved_prompt ? improvedBlock(it) : null,
     it.status === 'SUCCEEDED' ? h('div', { class: 'rate' },
       h('span', { class: 'muted' }, `평가: ${evText}`), h('span', { style: 'flex:1' }),
       h('label', { class: 'muted' }, '점수 ', score),

@@ -51,7 +51,7 @@ pub async fn prompts(State(s): State<AppState>, Query(f): Query<Filter>) -> ApiR
     let mut items: Value = sqlx::query_scalar(r#"
         SELECT coalesce(jsonb_agg(x ORDER BY x.no DESC), '[]'::jsonb) FROM (
             SELECT r.no, r.id, coalesce(s.source, 'api') AS source, r.sequence, r.interaction, r.status, r.model,
-                   r.prompt, left(r.response, 2000) AS response, r.prompt_score, r.input_tokens, r.cached_tokens, r.output_tokens,
+                   r.prompt, left(r.response, 2000) AS response, r.prompt_score, r.clarity_score, r.specificity_score, r.structure_score, r.input_tokens, r.cached_tokens, r.output_tokens,
                    r.latency_ms, r.created_at,
                    (SELECT jsonb_build_object('quality_score', e.quality_score, 'accepted', e.accepted, 'auto', e.auto) FROM evaluations e WHERE e.run_id = r.id) AS evaluation
             FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
@@ -64,7 +64,10 @@ pub async fn prompts(State(s): State<AppState>, Query(f): Query<Filter>) -> ApiR
     let list = items.as_array_mut().map(std::mem::take).unwrap_or_default();
     let next_before = if list.len() as i64 == limit { list.last().and_then(|r| r["no"].as_i64()) } else { None };
     let list: Vec<Value> = list.into_iter().map(|mut r| {
-        r["tips"] = json!(analyze_prompt(r["prompt"].as_str().unwrap_or_default()).suggestions);
+        let a = analyze_prompt(r["prompt"].as_str().unwrap_or_default());
+        r["tips"] = json!(a.suggestions);
+        r["improved_prompt"] = json!(a.improved_prompt);
+        r["improved_score"] = json!(a.improved_score);
         r
     }).collect();
     Ok(Json(json!({"items": list, "next_before": next_before})))
