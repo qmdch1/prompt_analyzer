@@ -109,11 +109,23 @@ def codex_turn(transcript, turn_id):
     return grew("input_tokens"), grew("output_tokens"), grew("cached_input_tokens")
 
 
+# Prompts the Codex app sends on its own (not typed by the user).
+CODEX_INTERNAL_PROMPTS = ("# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions",)
+
+
+def is_internal(source, event):
+    """Codex app background threads (e.g. suggestions) keep no transcript; skip them and their known prompts."""
+    if source != "codex":
+        return False
+    prompt = (event.get("prompt") or "").lstrip()
+    return not event.get("transcript_path") or prompt.startswith(CODEX_INTERNAL_PROMPTS)
+
+
 def main():
     source = sys.argv[1] if len(sys.argv) > 1 else "claude"
     event = json.load(sys.stdin)
     session_id = event.get("session_id")
-    if not session_id:
+    if not session_id or is_internal(source, event):
         return
     name = event.get("hook_event_name")
     if name == "UserPromptSubmit":

@@ -94,8 +94,8 @@ pub async fn stats(db: &PgPool, source: &str, limit: i64) -> anyhow::Result<Valu
                     FROM sessions s JOIN session_metrics m ON m.session_id = s.id WHERE s.source = $1),
         'recent', coalesce((SELECT jsonb_agg(x) FROM (
                       SELECT s.goal, m.attempts, m.accepted, m.total_tokens, m.retry_waste_tokens,
-                             (SELECT round(avg(e.quality_score), 1) FROM evaluations e JOIN prompt_runs r ON r.id = e.run_id WHERE r.session_id = s.id) AS quality,
-                             (SELECT round(avg(prompt_score), 1) FROM prompt_runs WHERE session_id = s.id) AS prompt_score, s.created_at
+                             (SELECT round(avg(e.quality_score)) FROM evaluations e JOIN prompt_runs r ON r.id = e.run_id WHERE r.session_id = s.id) AS quality,
+                             (SELECT round(avg(prompt_score)) FROM prompt_runs WHERE session_id = s.id) AS prompt_score, s.created_at
                       FROM sessions s LEFT JOIN session_metrics m ON m.session_id = s.id
                       WHERE s.source = $1 ORDER BY s.created_at DESC LIMIT $2) x), '[]'::jsonb))"#)
         .bind(source).bind(limit).fetch_one(db).await?;

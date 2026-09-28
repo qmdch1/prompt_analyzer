@@ -182,7 +182,7 @@ function h(tag, props = {}, ...kids) {
 }
 const svg = (tag, attrs = {}) => { const el = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); return el; };
 const num = (n) => Number(n || 0).toLocaleString('ko-KR');
-const compact = (n) => new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0);
+const compact = (n) => new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 0 }).format(n || 0);
 const pad = (n) => String(n).padStart(2, '0');
 const when = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
@@ -220,11 +220,10 @@ function renderCurrency() {
 for (const b of document.querySelectorAll('.unit-toggle button')) {
   b.addEventListener('click', () => { state.currency = b.dataset.cur; store.set('currency', state.currency); renderCurrency(); renderItems(); });
 }
+// Whole numbers only, in both currencies.
 function money(usd) {
   if (usd == null) return '–';
-  if (state.currency === 'usd') return usd >= 1 ? usd.toFixed(2) : usd >= 0.01 ? usd.toFixed(3) : usd.toFixed(4);
-  const krw = usd * (state.fx?.usd_krw ?? 1355);
-  return krw >= 100 ? Math.round(krw).toLocaleString('ko-KR') : krw >= 1 ? krw.toFixed(1) : krw.toFixed(2);
+  return num(Math.round(state.currency === 'usd' ? usd : usd * (state.fx?.usd_krw ?? 1355)));
 }
 const shortModel = (m, source) => (!m || m === source ? '–' : m.replace(/-\d{8}$/, ''));
 
@@ -258,7 +257,7 @@ function renderKpis(s) {
     ['총 토큰', compact(s.total_tokens), `이 중 캐시 ${pct(s.cached_tokens, s.total_tokens)}%`],
     ['재시도 낭비', compact(s.retry_waste_tokens), `총 토큰의 ${pct(s.retry_waste_tokens, s.total_tokens)}%`],
     ['첫 시도 성공률', s.first_try_success_pct == null ? '–' : `${s.first_try_success_pct}%`, `평가된 작업 ${num(s.evaluated_tasks)}개 기준`],
-    ['평균 프롬프트 점수', s.avg_prompt_score == null ? '–' : s.avg_prompt_score, '100점 만점'],
+    ['평균 프롬프트 점수', s.avg_prompt_score == null ? '–' : f0(s.avg_prompt_score), '100점 만점'],
   ];
   $('kpis').replaceChildren(...tiles.map(([label, value, note]) =>
     h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'note' }, note))));
@@ -398,7 +397,7 @@ function statusCell(it) {
   const ev = it.evaluation;
   if (it.status === 'DRAFT' || it.status === 'RUNNING') return h('span', { class: 'status muted' }, h('span', { class: 'icon' }, '…'), '진행 중');
   if (!ev) return h('span', { class: 'status muted' }, h('span', { class: 'icon' }, '–'), '미평가');
-  const q = ev.quality_score != null ? h('span', { class: 'muted' }, ` · ${Number(ev.quality_score)}점`) : null;
+  const q = ev.quality_score != null ? h('span', { class: 'muted' }, ` · ${f0(ev.quality_score)}점`) : null;
   const auto = ev.auto ? h('span', { class: 'tag', title: '다음 프롬프트를 보고 자동으로 추정했습니다' }, '자동') : null;
   return ev.accepted
     ? h('span', { class: 'status' }, h('span', { class: 'icon', style: 'color:var(--good)' }, '✓'), '성공', q, auto)
@@ -420,7 +419,7 @@ function renderItems() {
       h('td', { class: 'model', title: it.model }, shortModel(it.model, it.source)),
       h('td', { class: 'num' }, done ? num(it.input_tokens + it.output_tokens) : '–'),
       h('td', { class: 'num' }, done ? money(it.cost_usd) : '–'),
-      h('td', { class: 'num' }, Number(it.prompt_score).toFixed(1)),
+      h('td', { class: 'num' }, f0(it.prompt_score)),
       h('td', {}, statusCell(it))));
     if (state.open.has(it.no)) body.append(h('tr', { class: 'detail' }, h('td', { colspan: 9 }, detail(it))));
   }
@@ -434,7 +433,6 @@ function clampPre(text) {
 }
 
 const f0 = (n) => Math.round(Number(n));
-const f1 = (n) => Number(n).toFixed(1);
 
 function improvedBlock(it) {
   const copy = h('button', { class: 'btn', onclick: async () => {
@@ -445,15 +443,15 @@ function improvedBlock(it) {
   const gain = it.improved_score - it.prompt_score;
   return h('div', { class: 'field improved' },
     h('div', { class: 'improved-head' }, h('span', { class: 'k' }, '개선 프롬프트'),
-      h('span', { class: 'meta' }, `예상 점수 ${f1(it.improved_score)}점 (${gain >= 0 ? '+' : ''}${f1(gain)}) · [ ] 부분을 채워서 쓰세요`),
+      h('span', { class: 'meta' }, `예상 점수 ${f0(it.improved_score)}점 (${gain >= 0 ? '+' : ''}${f0(gain)}) · [ ] 부분을 채워서 쓰세요`),
       h('span', { style: 'flex:1' }), copy),
     h('pre', { class: 'open' }, it.improved_prompt));
 }
 
 function detail(it) {
   const ev = it.evaluation;
-  const evText = !ev ? '아직 평가 없음' : `${ev.accepted ? '성공' : '실패'}${ev.quality_score != null ? ` · ${Number(ev.quality_score)}점` : ''}${ev.auto ? ' (자동 추정)' : ''}`;
-  const score = h('input', { type: 'number', min: 0, max: 100, value: ev?.quality_score != null ? Number(ev.quality_score) : 80, 'aria-label': '품질 점수' });
+  const evText = !ev ? '아직 평가 없음' : `${ev.accepted ? '성공' : '실패'}${ev.quality_score != null ? ` · ${f0(ev.quality_score)}점` : ''}${ev.auto ? ' (자동 추정)' : ''}`;
+  const score = h('input', { type: 'number', min: 0, max: 100, value: ev?.quality_score != null ? f0(ev.quality_score) : 80, step: 1, 'aria-label': '품질 점수' });
   const rate = async (accepted) => {
     const q = Math.max(0, Math.min(100, Number(score.value) || 0));
     await fetch(`${API}/v1/runs/${it.id}/evaluate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quality_score: q, accepted }) });
@@ -467,7 +465,7 @@ function detail(it) {
     h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트'), ...clampPre(it.prompt)),
     it.response ? h('div', { class: 'field' }, h('div', { class: 'k' }, '응답'), ...clampPre(it.response)) : null,
     h('div', { class: 'field' }, h('div', { class: 'k' }, '점수 구성'),
-      h('div', { class: 'meta' }, `${f1(it.prompt_score)}점 = 명확성 ${f0(it.clarity_score)} × 40% + 구체성 ${f0(it.specificity_score)} × 35% + 구조 ${f0(it.structure_score)} × 25%`)),
+      h('div', { class: 'meta' }, `${f0(it.prompt_score)}점 = 명확성 ${f0(it.clarity_score)} × 40% + 구체성 ${f0(it.specificity_score)} × 35% + 구조 ${f0(it.structure_score)} × 25%`)),
     it.tips?.length ? h('div', { class: 'field' }, h('div', { class: 'k' }, '프롬프트 개선 팁'), h('ul', { class: 'tips' }, ...it.tips.map((t) => h('li', {}, t)))) : null,
     it.improved_prompt ? improvedBlock(it) : null,
     it.status === 'SUCCEEDED' ? h('div', { class: 'rate' },
