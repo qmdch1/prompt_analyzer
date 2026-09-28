@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Prompt Analyzer dashboard" width="100%" />
+</p>
+
+<p align="center">
+  Claude Code · Codex 프롬프트의 토큰, 비용, 재시도 낭비, 품질을 자동으로 기록하는 대시보드 — <b>http://localhost:8080</b>
+</p>
+
+대시보드는 요약 지표, 일별 토큰 차트, 프롬프트 이력을 보여줍니다. 이력은 최신순이고, 스크롤하면 이전 기록을 자동으로 더 불러옵니다. 프롬프트마다 사용 모델, 토큰, 비용이 나오며 비용은 열 제목의 `원 / $` 토글로 바꿉니다. 비용은 모델별 API 정가로 계산한 추정치이고(구독 요금제의 실제 청구와는 다릅니다), 원화 환율은 ECB 기준으로 1시간마다 갱신됩니다(`src/pricing.rs`에서 단가 수정). 행을 누르면 응답·토큰·개선 팁을 보고 그 자리에서 성공/실패를 평가할 수 있습니다. 새 프롬프트는 15초마다 자동으로 추가됩니다.
+
 > **AI 에이전트용 설치 안내** — 이 README를 읽은 AI(Claude Code, Codex 등)는 아래를 순서대로 실행하면 됩니다.
 >
 > 1. 필요한 것: `docker`, `git`, `python3`. Windows에서는 WSL(Ubuntu) 안에서 실행합니다.
@@ -78,12 +88,6 @@ python3 integrations/install.py       # Claude Code·Codex 자동 기록 연결
 ```
 
 `.env` 없이 바로 동작하고, DB 테이블은 API가 시작할 때 자동으로 만듭니다. 브라우저에서 **http://localhost:8080** 을 열면 대시보드가 보입니다.
-
-<p align="center">
-  <img src="docs/images/dashboard.png" alt="Prompt Analyzer dashboard" width="100%" />
-</p>
-
-대시보드는 요약 지표, 일별 토큰 차트, 프롬프트 이력을 보여줍니다. 이력은 최신순이고, 스크롤하면 이전 기록을 자동으로 더 불러옵니다. 프롬프트마다 사용 모델, 토큰, 비용이 나오며 비용은 열 제목의 `원 / $` 토글로 바꿉니다. 비용은 모델별 API 정가로 계산한 추정치이고(구독 요금제의 실제 청구와는 다릅니다), 원화 환율은 ECB 기준으로 1시간마다 갱신됩니다(`src/pricing.rs`에서 단가 수정). 행을 누르면 응답·토큰·개선 팁을 보고 그 자리에서 성공/실패를 평가할 수 있습니다. 새 프롬프트는 15초마다 자동으로 추가됩니다.
 
 | 서비스 | 주소 |
 |---|---|
