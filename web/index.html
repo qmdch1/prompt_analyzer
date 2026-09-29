@@ -103,6 +103,10 @@ tbody tr.item { cursor: pointer; }
 tbody tr.item:hover, tbody tr.item:focus { background: var(--raised); outline: none; }
 table.breakdown tr.total td, table.mini tr.total td { font-weight: 600; border-top: 1px solid var(--axis); }
 table.breakdown tbody tr:last-child td { border-bottom: 0; }
+/* narrow 구분 column, the four number columns share the rest equally */
+table.breakdown { table-layout: fixed; min-width: 560px; }
+table.breakdown col { width: 22%; }
+table.breakdown col.label-col { width: 12%; }
 table.mini { width: auto; min-width: 360px; font-size: 13px; margin-top: 4px; }
 table.mini th, table.mini td { padding: 4px 12px 4px 0; }
 .more-state { color: var(--ink-2); text-align: center; padding: 14px 0 2px; font-size: 13px; }
@@ -135,10 +139,11 @@ table.mini th, table.mini td { padding: 4px 12px 4px 0; }
     <section class="card">
       <div class="card-head">
         <h2>토큰·비용 구성</h2>
-        <span class="muted small">캐시 토큰은 앞서 보낸 대화를 다시 보낸 부분으로, 입력 토큰보다 훨씬 싸게 청구됩니다</span>
+        <span class="muted small">캐시는 앞서 보낸 대화를 다시 보낸 부분으로, 입력보다 훨씬 싸게 청구됩니다</span>
       </div>
       <div class="scroll">
         <table class="breakdown">
+          <colgroup><col class="label-col"><col><col><col><col></colgroup>
           <thead><tr>
             <th>구분</th><th class="num">토큰</th><th class="num">토큰 비중</th>
             <th class="num cost-head">비용 <span class="unit-toggle" role="group" aria-label="통화"><button data-cur="krw">원</button><button data-cur="usd">$</button></span></th><th class="num">비용 비중</th>
@@ -272,9 +277,9 @@ async function loadSummary() {
 
 // ---------- cached input / fresh input / output, in tokens and money
 const PARTS = [
-  ['cached', '캐시 토큰', '앞서 보낸 대화를 다시 보낸 입력 (서버 캐시에서 싸게 읽음)'],
-  ['fresh', '입력 토큰', '캐시를 뺀, 이번에 새로 보낸 입력'],
-  ['output', '출력 토큰', 'AI가 쓴 답'],
+  ['cached', '캐시', '앞서 보낸 대화를 다시 보낸 입력 (서버 캐시에서 싸게 읽음)'],
+  ['fresh', '입력', '캐시를 뺀, 이번에 새로 보낸 입력'],
+  ['output', '출력', 'AI가 쓴 답'],
 ];
 const pct = (a, b) => (!b ? '–' : a > 0 && (100 * a) / b < 0.5 ? '<1%' : `${Math.round((100 * a) / b)}%`);
 function renderBreakdown(b) {
