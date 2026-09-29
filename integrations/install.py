@@ -3,6 +3,7 @@
 
     python3 integrations/install.py              # install (safe to re-run)
     python3 integrations/install.py --check      # is everything connected and recording?
+    python3 integrations/install.py --import     # import past turns again (install already does it once)
     python3 integrations/install.py --uninstall  # remove everything again
 
 Run it where the hook should live (Linux, macOS, or WSL). From WSL it also connects the Windows
@@ -18,6 +19,9 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import history  # noqa: E402  (lives next to this file, in the repo and in ~/.prompt-analyzer)
 
 HOME = Path.home()
 API = os.environ.get("PROMPT_ANALYZER_URL", "http://localhost:8080").rstrip("/")
@@ -145,13 +149,33 @@ def check(found):
                 print(f"  · {source} 마지막 기록: {when} — {items[0]['prompt'][:40]!r}")
             else:
                 print(f"  · {source} 아직 기록 없음 — 새로 시작해서 프롬프트를 하나 보내 보세요")
+    imported = sorted(HOOK.parent.glob("imported-*.json"), key=lambda p: p.stat().st_mtime)
+    if imported:
+        mins = int((datetime.now().timestamp() - imported[-1].stat().st_mtime) // 60)
+        print(f"  · 과거 기록 가져오기: 마지막 실행 {'방금' if mins < 1 else f'{mins}분 전' if mins < 60 else f'{mins // 60}시간 전'} (훅이 1시간마다 빠진 기록을 채움)")
     log = HOOK.parent / "hook.log"
     if log.exists() and log.stat().st_size:
         print("\n[최근 훅 오류] " + str(log))
         print("".join(log.read_text(encoding="utf-8").splitlines(keepends=True)[-3:]), end="")
 
 
+def import_history():
+    """Past turns from every transcript folder this machine has (see history.py)."""
+    win = windows_home()
+    result = history.run(API, [HOME] + ([win] if win else []))
+    if "--quiet" in sys.argv:
+        return
+    if result is None:
+        print("과거 기록: 다른 가져오기가 이미 실행 중입니다.")
+    else:
+        conversations, added, skipped, updated = result
+        fixed = f" (그중 {updated}개는 대화 기록 기준으로 토큰을 채우거나 바로잡음)" if updated else ""
+        print(f"과거 기록: 대화 {conversations}개에서 새로 {added}개를 가져왔고, 이미 있던 {skipped}개는 건너뛰었습니다{fixed}.")
+
+
 def main():
+    if "--import" in sys.argv:
+        return import_history()
     install = "--uninstall" not in sys.argv
     found = agents()
     if not found:
@@ -161,6 +185,7 @@ def main():
     if install:
         HOOK.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(Path(__file__).with_name("hook.py"), HOOK)
+        shutil.copy(Path(__file__).with_name("history.py"), HOOK.parent / "history.py")
         if Path(__file__).resolve() != (HOOK.parent / "install.py").resolve():  # so --check works from anywhere
             shutil.copy(__file__, HOOK.parent / "install.py")
     for label, source, config, command, exe in found:
@@ -170,6 +195,11 @@ def main():
         shutil.rmtree(HOOK.parent, ignore_errors=True)
         print("\n연결을 모두 해제했습니다.")
         return
+    print()
+    try:
+        import_history()
+    except OSError as e:  # server down: the hooks will fill the history in later
+        print(f"과거 기록: 서버에 연결하지 못해 건너뛰었습니다 ({e}). 서버를 켜 두면 훅이 1시간 안에 가져옵니다.")
     print(f"\n완료. 에이전트를 새로 시작하면 모든 프롬프트가 {API} 에 자동 기록됩니다.")
     if any(source == "codex" for _, source, *_ in found):
         print("Codex는 처음 시작할 때 새 훅을 신뢰할지 묻습니다. 한 번 승인해 주세요.")

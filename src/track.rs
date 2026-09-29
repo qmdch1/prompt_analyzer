@@ -1,5 +1,5 @@
 //! Automatic recording for agent hooks: one call per prompt, one per finished answer.
-use crate::{analysis::{analyze_prompt, infer_interaction, recompute_session}, err, finish_run, ApiResult, AppState, CompleteRun};
+use crate::{analysis::{analyze_prompt, clean_prompt, infer_interaction, recompute_session}, err, finish_run, ApiResult, AppState, CompleteRun};
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -12,7 +12,8 @@ use uuid::Uuid;
 fn internal(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) { err(StatusCode::INTERNAL_SERVER_ERROR, e) }
 
 /// Steps 1+2: picks the session (a new task opens a new one) and records the prompt.
-pub async fn track_prompt(State(s): State<AppState>, Json(p): Json<TrackPrompt>) -> ApiResult<Json<Value>> {
+pub async fn track_prompt(State(s): State<AppState>, Json(mut p): Json<TrackPrompt>) -> ApiResult<Json<Value>> {
+    p.prompt = clean_prompt(&p.prompt);
     if p.prompt.trim().is_empty() { return Err(err(StatusCode::BAD_REQUEST, "prompt is required")); }
     let analysis = analyze_prompt(&p.prompt);
     let mut tx = s.db.begin().await.map_err(internal)?;

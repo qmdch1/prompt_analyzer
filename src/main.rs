@@ -1,11 +1,12 @@
 mod analysis;
+mod import;
 mod mcp;
 mod pricing;
 mod track;
 mod web;
 
 use analysis::{analyze_prompt, recompute_session, PromptAnalysis};
-use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
+use axum::{extract::{DefaultBodyLimit, Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool};
@@ -56,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/sessions/{id}/metrics", get(get_metrics))
         .route("/v1/track/prompt", post(track::track_prompt))
         .route("/v1/track/complete", post(track::track_complete))
+        .route("/v1/import", post(import::import).layer(DefaultBodyLimit::max(32 << 20)))
         .route("/mcp/{source}", post(mcp::handle))
         .layer(CorsLayer::permissive()).layer(TraceLayer::new_for_http()).with_state(state);
     let addr = format!("0.0.0.0:{}", env::var("PORT").unwrap_or_else(|_| "8080".into()));

@@ -20,7 +20,7 @@
 > 3. 확인: `python3 integrations/install.py --check` 결과가 모두 ✓이면 끝입니다. Codex만 ✗이면, 사용자가 Codex를 켜서 새 훅을 한 번 승인해야 합니다.
 > 4. 사용자에게 알릴 것: 대시보드는 http://localhost:8080 이고, 에이전트를 새로 시작하면 기록이 시작됩니다.
 >
-> `install.py`가 하는 일: Claude Code와 Codex(WSL에서 실행하면 Windows 앱 포함)의 훅 설정(`~/.claude/settings.json`, `~/.codex/hooks.json`)에 `UserPromptSubmit`·`Stop` 훅을 추가하고, MCP 서버 `prompt-analyzer`를 등록합니다. 기존 훅은 건드리지 않고, 여러 번 실행해도 되며, 훅이 실패해도 프롬프트를 막지 않습니다. 되돌리기는 `--uninstall`입니다.
+> `install.py`가 하는 일: Claude Code와 Codex(WSL에서 실행하면 Windows 앱 포함)의 훅 설정(`~/.claude/settings.json`, `~/.codex/hooks.json`)에 `UserPromptSubmit`·`Stop` 훅을 추가하고, MCP 서버 `prompt-analyzer`를 등록하고, PC에 남아 있는 과거 대화 기록을 한 번에 가져옵니다. 기존 훅은 건드리지 않고, 여러 번 실행해도 되며, 훅이 실패해도 프롬프트를 막지 않습니다. 되돌리기는 `--uninstall`입니다.
 
 <p align="center">
   <img src="docs/images/architecture.svg" alt="Prompt Observability architecture" width="100%" />
@@ -162,7 +162,8 @@ python3 integrations/install.py --check
 
 - Codex는 처음 시작할 때 새 훅을 신뢰할지 묻습니다. 한 번 승인해야 기록이 시작됩니다.
 - 서버가 꺼져 있어도 에이전트는 평소처럼 동작하고 기록만 빠집니다 (`~/.prompt-analyzer/hook.log`).
-- Claude Code의 서브에이전트가 쓴 토큰은 포함되지 않습니다.
+- **과거 기록:** 설치할 때 WSL·Windows의 Claude Code(`.claude/projects`)와 Codex(`.codex/sessions`) 대화 기록을 스스로 찾아서 가져옵니다(프롬프트, 응답, 모델, 토큰, 시각). 그 뒤로는 훅이 1시간마다 백그라운드에서 빠진 기록(서버가 꺼져 있던 동안 등)을 채우고, 대화 기록과 다른 토큰 값은 바로잡습니다. 직접 다시 돌리려면 `python3 integrations/install.py --import` — 여러 번 돌려도 중복되지 않습니다.
+- Claude Code·Codex의 서브에이전트가 쓴 토큰은 포함되지 않습니다.
 - 연결 해제: `python3 integrations/install.py --uninstall`
 - 서버 주소가 다르면 설치할 때 지정합니다: `PROMPT_ANALYZER_URL=http://서버:8080 python3 integrations/install.py`
 
@@ -225,8 +226,9 @@ src/analysis.rs     프롬프트 점수 + 세션 효율 계산 + 재시도 추�
 src/track.rs        에이전트 자동 기록 (훅이 호출)
 src/mcp.rs          MCP 서버 (/mcp/claude, /mcp/codex)
 src/web.rs          대시보드 API (/v1/dashboard, /v1/prompts)
+src/import.rs       과거 기록 가져오기 (/v1/import)
 web/index.html      대시보드 화면 (정적 HTML + JS)
-integrations/       Claude Code·Codex 훅과 설치 스크립트
+integrations/       Claude Code·Codex 훅, 설치 스크립트, 과거 기록 읽기(history.py)
 migrations/         PostgreSQL 스키마 (시작 시 자동 적용)
 compose.yaml        postgres + api
 ```

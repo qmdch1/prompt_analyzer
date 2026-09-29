@@ -6,8 +6,10 @@ Usage (set up by install.py):  python3 hook.py claude|codex [API_URL]   < hook J
 It never blocks the agent: prints nothing, always exits 0, and logs failures to
 ~/.prompt-analyzer/hook.log.
 """
+import hashlib
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -89,24 +91,27 @@ def claude_turn(transcript):
 
 
 def codex_turn(transcript, turn_id):
-    """Token usage of one Codex turn: the growth of total_token_usage across it."""
-    before, after, inside = {}, None, False
+    """Token usage of one Codex turn: the sum of its requests' usage. Each request's token_count can be
+    written more than once (same running total), and the running total itself can reset mid-thread,
+    so per-request usage is the reliable measure."""
+    inside, seen, last_total, used = False, False, None, {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
     for e in read_jsonl(transcript):
         p = e.get("payload") or {}
         kind = p.get("type")
         if kind == "task_started" and p.get("turn_id") == turn_id:
             inside = True
-        elif kind == "token_count" and (p.get("info") or {}).get("total_token_usage"):
-            if inside:
-                after = p["info"]["total_token_usage"]
-            else:
-                before = p["info"]["total_token_usage"]
+        elif kind == "token_count" and (p.get("info") or {}).get("last_token_usage"):
+            total = p["info"].get("total_token_usage")
+            if inside and total != last_total:
+                for k in used:
+                    used[k] += p["info"]["last_token_usage"].get(k, 0)
+                seen = True
+            last_total = total
         elif kind in ("task_complete", "turn_aborted") and inside and p.get("turn_id") == turn_id:
             break
-    if after is None:
+    if not seen:
         return None
-    grew = lambda k: max(0, after.get(k, 0) - before.get(k, 0))
-    return grew("input_tokens"), grew("output_tokens"), grew("cached_input_tokens")
+    return used["input_tokens"], used["output_tokens"], used["cached_input_tokens"]
 
 
 # Prompts the Codex app sends on its own (not typed by the user).
@@ -114,9 +119,12 @@ CODEX_INTERNAL_PROMPTS = ("# Overview\n\nGenerate 0 to 3 hyperpersonalized sugge
 
 
 def is_internal(source, event):
-    """Codex app background threads (e.g. suggestions) keep no transcript; skip them and their known prompts."""
+    """Codex app background threads (e.g. suggestions) keep no transcript, and subagent threads carry an
+    agent id; skip both, and the app's known background prompts."""
     if source != "codex":
         return False
+    if event.get("agent_id") or event.get("agent_type"):
+        return True
     prompt = (event.get("prompt") or "").lstrip()
     return not event.get("transcript_path") or prompt.startswith(CODEX_INTERNAL_PROMPTS)
 
@@ -152,6 +160,19 @@ def main():
         except urllib.error.HTTPError as e:
             if e.code != 404:  # 404: the turn was only a rating and got folded into the previous answer
                 raise
+        backfill_hourly()
+
+
+def backfill_hourly():
+    """At most once an hour, import past turns in the background so gaps (server was down) fill in."""
+    here = Path(__file__).resolve().parent
+    stamp = here / f"last-import-{hashlib.sha1(API.encode()).hexdigest()[:8]}"
+    if not (here / "install.py").exists() or (stamp.exists() and time.time() - stamp.stat().st_mtime < 3600):
+        return
+    stamp.touch()
+    with open(here / "import.log", "a") as log:
+        subprocess.Popen([sys.executable, str(here / "install.py"), "--import", "--quiet"], stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=log, start_new_session=True, env=dict(os.environ, PROMPT_ANALYZER_URL=API))
 
 
 if __name__ == "__main__":

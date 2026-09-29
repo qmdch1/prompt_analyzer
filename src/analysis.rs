@@ -96,6 +96,24 @@ pub async fn recompute_session(pool: &PgPool, session_id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Context blocks agents put in front of what the user typed (e.g. the Codex app's in-app browser state).
+const INJECTED_BLOCKS: &[&str] = &["in-app-browser-context", "environment_context", "user_instructions", "recommended_plugins"];
+
+/// The part of a prompt the user actually typed: injected context blocks and the "## My request:"
+/// header that follows them are dropped. Returns the original text if nothing else is left.
+pub fn clean_prompt(prompt: &str) -> String {
+    let mut text = prompt.to_owned();
+    for tag in INJECTED_BLOCKS {
+        let (open, close) = (format!("<{tag}"), format!("</{tag}>"));
+        while let Some(start) = text.find(&open) {
+            let Some(len) = text[start..].find(&close) else { break };
+            text.replace_range(start..start + len + close.len(), "");
+        }
+    }
+    let typed = text.trim().trim_start_matches("## My request:").trim();
+    if typed.is_empty() { prompt.trim().to_owned() } else { typed.to_owned() }
+}
+
 /// Guesses how a follow-up prompt relates to the previous attempt in the same agent session.
 /// A correction sits where people put one — at the start ("아니 …", "다시 …", "PostgreSQL 말고 …") —
 /// or reads as a report that something broke. The same words deeper in a new instruction
@@ -119,7 +137,15 @@ pub fn infer_interaction(prompt: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{analyze_prompt, infer_interaction};
+    use super::{analyze_prompt, clean_prompt, infer_interaction};
+
+    #[test]
+    fn clean_prompt_keeps_only_what_was_typed() {
+        let browser = "<in-app-browser-context source=\"ambient-ui-state\">\nThis block is automatically supplied…\n</in-app-browser-context>\n\n## My request:\n로컬에서 접속 어떻게 해?";
+        assert_eq!(clean_prompt(browser), "로컬에서 접속 어떻게 해?");
+        assert_eq!(clean_prompt("  커밋하고 푸시해 "), "커밋하고 푸시해");
+        assert_eq!(clean_prompt("<div>html</div> 이건 그대로"), "<div>html</div> 이건 그대로");
+    }
 
     #[test]
     fn improved_prompt_applies_every_tip() {
