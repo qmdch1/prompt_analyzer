@@ -154,7 +154,7 @@ table.mini th, table.mini td { padding: 4px 12px 4px 0; }
 
     <section class="card">
       <div class="card-head">
-        <h2>일별 토큰 사용량</h2>
+        <h2 id="chart-title">일별 토큰 사용량</h2>
         <div class="legend" id="legend"></div>
         <span class="spacer"></span>
         <button class="link" id="toggle-table" aria-expanded="false">표로 보기</button>
@@ -262,12 +262,13 @@ function reload() {
 async function loadSummary() {
   // No dimming while fetching: the current view stays as is and is swapped in place when data arrives.
   try {
-    const d = await getJSON('/v1/dashboard', { ...filters(), tz });
+    const hourly = state.days === '1';  // 오늘: one bar per hour instead of a single day
+    const d = await getJSON('/v1/dashboard', { ...filters(), tz, bucket: hourly ? 'hour' : 'day' });
     const sel = $('source'); const known = new Set([...sel.options].map((o) => o.value));
     for (const s of d.sources) if (!known.has(s)) sel.append(h('option', { value: s }, agentName(s)));
     sel.value = state.source;
     renderKpis(d.summary);
-    state.daily = d.daily; renderChart(d.daily);
+    state.daily = d.daily; state.hourly = hourly; renderChart(d.daily, hourly);
     if (d.fx) { const first = !state.fx; state.fx = d.fx; renderCurrency(); if (first) renderItems(); }
     state.breakdown = d.breakdown; renderBreakdown(d.breakdown);
     $('updated').textContent = '업데이트 ' + new Date().toLocaleTimeString('ko-KR');
@@ -312,52 +313,64 @@ function daysBetween(first, last) {
   while (d <= end) { out.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
   return out;
 }
-function niceMax(v) {
-  if (v <= 0) return 1;
-  const p = 10 ** Math.floor(Math.log10(v)); const f = v / p;
-  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+// Axis ticks whose compact labels stay whole numbers: above 1억 the step is whole 억, above 1만 whole 만
+// (a 1.5억 tick would print as "2억" next to a real 2억).
+function axisTicks(maxValue) {
+  const nice = (x) => { const p = 10 ** Math.floor(Math.log10(x)); const f = x / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; };
+  const unit = maxValue > 1e8 ? 1e8 : maxValue > 1e4 ? 1e4 : 1;
+  const step = Math.ceil(Math.max(nice(Math.max(maxValue, 1) / 4), unit) / unit) * unit;
+  return { max: Math.max(step, Math.ceil(maxValue / step) * step), step };
 }
 function topRounded(x, y, w, hgt, r) {
   r = Math.min(r, hgt, w / 2);
   return `M${x},${y + hgt}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + hgt}Z`;
 }
 
-function renderChart(daily) {
+// Bucket keys: "YYYY-MM-DD" for days, "YYYY-MM-DD HH" for hours (both in the viewer's time zone).
+const localDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayHours = () => { const day = localDay(new Date()); return Array.from({ length: 24 }, (_, i) => `${day} ${pad(i)}`); };
+// Daily axis covers the whole chosen period up to today, empty days included (전체: from the first record).
+const periodDays = (daily) => daysBetween(state.days ? localDay(new Date(since(Number(state.days)))) : daily[0].day, localDay(new Date()));
+const bucketLabel = (key, hourly) => (hourly ? `${Number(key.slice(11))}시` : `${Number(key.slice(5, 7))}/${Number(key.slice(8))}`);
+const bucketTitle = (key, hourly) => (hourly ? `${Number(key.slice(11))}시 ~ ${Number(key.slice(11)) + 1}시` : key);
+
+function renderChart(daily, hourly = false) {
   const chart = $('chart'); const legend = $('legend'); const table = $('chart-table');
+  $('chart-title').textContent = hourly ? '시간별 토큰 사용량 (오늘)' : '일별 토큰 사용량';
   const series = [...new Set(daily.map((r) => r.source))].sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
   const byDay = new Map();
   for (const r of daily) { if (!byDay.has(r.day)) byDay.set(r.day, {}); byDay.get(r.day)[r.source] = Number(r.tokens); }
-  const days = daily.length ? daysBetween(daily[0].day, daily[daily.length - 1].day) : [];
+  const days = hourly ? todayHours() : daily.length ? periodDays(daily) : [];
 
   legend.replaceChildren(...(series.length > 1 ? series.map((s) => h('span', {}, h('i', { class: 'sw', style: `background:${color(s)}` }), agentName(s))) : []));
   table.replaceChildren(
-    h('thead', {}, h('tr', {}, h('th', {}, '날짜'), ...series.map((s) => h('th', { class: 'num' }, agentName(s))), h('th', { class: 'num' }, '합계'))),
+    h('thead', {}, h('tr', {}, h('th', {}, hourly ? '시간' : '날짜'), ...series.map((s) => h('th', { class: 'num' }, agentName(s))), h('th', { class: 'num' }, '합계'))),
     h('tbody', {}, ...days.map((day) => {
       const v = byDay.get(day) || {};
-      return h('tr', {}, h('td', {}, day), ...series.map((s) => h('td', { class: 'num' }, num(v[s]))), h('td', { class: 'num' }, num(series.reduce((a, s) => a + (v[s] || 0), 0))));
+      return h('tr', {}, h('td', {}, bucketTitle(day, hourly)), ...series.map((s) => h('td', { class: 'num' }, num(v[s]))), h('td', { class: 'num' }, num(series.reduce((a, s) => a + (v[s] || 0), 0))));
     })));
 
-  if (days.length < 2) {
-    chart.replaceChildren(h('div', { class: 'empty' }, days.length ? '이틀 이상 기록이 쌓이면 일별 추이가 여기에 표시됩니다.' : '이 기간에는 기록이 없습니다.'));
+  if (!daily.length || (!hourly && days.length < 2)) {
+    chart.replaceChildren(h('div', { class: 'empty' }, !daily.length ? (hourly ? '오늘은 아직 기록이 없습니다.' : '이 기간에는 기록이 없습니다.') : '이틀 이상 기록이 쌓이면 일별 추이가 여기에 표시됩니다.'));
     return;
   }
   const W = Math.max(chart.clientWidth, 320), H = 260, m = { t: 12, r: 8, b: 28, l: 52 };
   const pw = W - m.l - m.r, ph = H - m.t - m.b;
   const totals = days.map((day) => series.reduce((a, s) => a + ((byDay.get(day) || {})[s] || 0), 0));
-  const max = niceMax(Math.max(...totals));
+  const { max, step } = axisTicks(Math.max(...totals));
   const y = (v) => m.t + ph - (v / max) * ph;
   const band = pw / days.length, bw = Math.max(2, Math.min(24, band * 0.6));
-  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': '일별 토큰 사용량 막대 차트' });
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': `${hourly ? '시간별' : '일별'} 토큰 사용량 막대 차트` });
 
-  for (let i = 0; i <= 4; i++) {  // recessive hairline grid with clean ticks
-    const v = (max / 4) * i, yy = Math.round(y(v)) + 0.5;
+  for (let v = 0; v <= max; v += step) {  // recessive hairline grid with clean ticks
+    const i = v, yy = Math.round(y(v)) + 0.5;
     root.append(svg('line', { x1: m.l, x2: W - m.r, y1: yy, y2: yy, stroke: i === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1 }));
     const t = svg('text', { x: m.l - 8, y: yy + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)' }); t.textContent = compact(v); root.append(t);
   }
-  const every = Math.ceil(days.length / Math.max(1, Math.floor(pw / 56)));
+  const every = hourly ? 3 : Math.ceil(days.length / Math.max(1, Math.floor(pw / 56)));
   days.forEach((day, i) => {
     const cx = m.l + band * i + band / 2, x = cx - bw / 2;
-    const g = svg('g', { class: 'col', tabindex: 0, 'aria-label': `${day} ${num(totals[i])} 토큰` });
+    const g = svg('g', { class: 'col', tabindex: 0, 'aria-label': `${bucketTitle(day, hourly)} ${num(totals[i])} 토큰` });
     g.append(svg('rect', { class: 'hit', x: m.l + band * i, y: m.t, width: band, height: ph, fill: 'transparent' }));
     let base = 0;
     const present = series.filter((s) => ((byDay.get(day) || {})[s] || 0) > 0);
@@ -369,13 +382,13 @@ function renderChart(daily) {
                                                      : svg('rect', { x, y: top, width: bw, height: hh, fill: color(s) }));
       base += v;
     });
-    const show = (ev) => showTip(ev, day, present.map((s) => [s, byDay.get(day)[s]]), totals[i], g);
+    const show = (ev) => showTip(ev, bucketTitle(day, hourly), present.map((s) => [s, byDay.get(day)[s]]), totals[i], g);
     g.addEventListener('pointermove', show); g.addEventListener('focus', show);
     g.addEventListener('pointerleave', hideTip); g.addEventListener('blur', hideTip);
     root.append(g);
     if (i % every === 0) {
       const t = svg('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--muted)' });
-      t.textContent = `${Number(day.slice(5, 7))}/${Number(day.slice(8))}`; root.append(t);
+      t.textContent = bucketLabel(day, hourly); root.append(t);
     }
   });
   chart.replaceChildren(root);
@@ -529,7 +542,7 @@ renderCurrency();
 reload();
 // New prompts show up on their own; skip a tick while the user is typing a score.
 setInterval(() => { if (!document.activeElement?.matches('input')) { loadSummary(); poll(); } }, 15000);
-window.addEventListener('resize', () => renderChart(state.daily));
+window.addEventListener('resize', () => renderChart(state.daily, state.hourly));
 </script>
 </body>
 </html>

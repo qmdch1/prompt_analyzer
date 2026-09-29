@@ -6,10 +6,11 @@ use serde_json::{json, Value};
 
 pub async fn index() -> Html<&'static str> { Html(include_str!("../web/index.html")) }
 
-/// `source`: agent name or "all"; `since`: RFC 3339 start of the period (omit for all time); `tz`: IANA zone for daily buckets.
+/// `source`: agent name or "all"; `since`: RFC 3339 start of the period (omit for all time); `tz`: IANA zone for the
+/// chart buckets; `bucket`: "hour" for hourly buckets (the 오늘 view), otherwise daily.
 /// `before` / `after`: prompt numbers for paging the history (newest first).
 #[derive(Deserialize)]
-pub struct Filter { source: Option<String>, since: Option<String>, tz: Option<String>, before: Option<i64>, after: Option<i64>, limit: Option<i64> }
+pub struct Filter { source: Option<String>, since: Option<String>, tz: Option<String>, bucket: Option<String>, before: Option<i64>, after: Option<i64>, limit: Option<i64> }
 
 fn internal(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) { err(StatusCode::INTERNAL_SERVER_ERROR, e) }
 
@@ -37,10 +38,10 @@ pub async fn dashboard(State(s): State<AppState>, Query(f): Query<Filter>) -> Ap
                                         FROM session_metrics m JOIN evaluated e ON e.session_id = m.session_id),
               'avg_prompt_score', (SELECT round(avg(prompt_score), 1) FROM runs)),
           'daily', coalesce((SELECT jsonb_agg(d ORDER BY d.day) FROM (
-              SELECT to_char(r.created_at AT TIME ZONE (SELECT name FROM tz), 'YYYY-MM-DD') AS day, r.source,
+              SELECT to_char(r.created_at AT TIME ZONE (SELECT name FROM tz), CASE WHEN $4 = 'hour' THEN 'YYYY-MM-DD HH24' ELSE 'YYYY-MM-DD' END) AS day, r.source,
                      sum(r.input_tokens + r.output_tokens) AS tokens
               FROM runs r GROUP BY 1, 2) d), '[]'::jsonb))"#)
-        .bind(&source).bind(&f.since).bind(f.tz).fetch_one(&s.db).await.map_err(internal)?;
+        .bind(&source).bind(&f.since).bind(f.tz).bind(f.bucket).fetch_one(&s.db).await.map_err(internal)?;
     v["breakdown"] = breakdown(&s, &source, &f.since).await?;
     v["fx"] = pricing::usd_krw(&s.http, &s.fx).await;
     Ok(Json(v))
