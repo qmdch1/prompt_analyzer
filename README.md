@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/dashboard.png" alt="Prompt Analyzer dashboard" width="100%" />
+  <img src="docs/images/dashboard.png" alt="Prompt Analyzer dashboard (프롬프트 내용은 흐리게 가림)" width="100%" />
 </p>
 
 <p align="center">
