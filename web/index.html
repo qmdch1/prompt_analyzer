@@ -384,10 +384,12 @@ function renderChart(daily) {
 
 function showTip(ev, day, rows, total, anchor) {
   const tip = $('tip');
-  tip.replaceChildren(
+  // replaceChildren would print a null as the text "null", so drop the missing total row first.
+  tip.replaceChildren(...[
     h('div', { class: 'muted', style: 'margin-bottom:4px' }, day),
     ...rows.map(([s, v]) => h('div', { class: 'row' }, h('span', {}, h('i', { class: 'key', style: `background:${color(s)}` }), agentName(s)), h('strong', {}, num(v)))),
-    rows.length > 1 ? h('div', { class: 'row', style: 'margin-top:4px' }, h('span', { class: 'muted' }, '합계'), h('strong', {}, num(total))) : null);
+    rows.length > 1 ? h('div', { class: 'row', style: 'margin-top:4px' }, h('span', { class: 'muted' }, '합계'), h('strong', {}, num(total))) : null,
+  ].filter(Boolean));
   tip.hidden = false;
   const r = ev.clientX != null ? { x: ev.clientX, y: ev.clientY } : (() => { const b = anchor.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top }; })();
   const w = tip.offsetWidth;
