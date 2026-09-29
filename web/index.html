@@ -44,8 +44,6 @@ h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
 .seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
 select, input[type=number] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
-main { transition: opacity .2s; }
-main.loading { opacity: .6; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .tile { padding: 14px 16px; }
@@ -260,7 +258,7 @@ function reload() {
 }
 
 async function loadSummary() {
-  $('main').classList.add('loading');  // keep the previous render while refetching
+  // No dimming while fetching: the current view stays as is and is swapped in place when data arrives.
   try {
     const d = await getJSON('/v1/dashboard', { ...filters(), tz });
     const sel = $('source'); const known = new Set([...sel.options].map((o) => o.value));
@@ -272,7 +270,6 @@ async function loadSummary() {
     state.breakdown = d.breakdown; renderBreakdown(d.breakdown);
     $('updated').textContent = '업데이트 ' + new Date().toLocaleTimeString('ko-KR');
   } catch { $('updated').textContent = '서버에 연결할 수 없습니다'; }
-  finally { $('main').classList.remove('loading'); }
 }
 
 // ---------- cached input / fresh input / output, in tokens and money
