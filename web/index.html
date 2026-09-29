@@ -219,13 +219,15 @@ const agentName = (src) => AGENTS[src] || src;
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const state = {
-  days: store.get('days', '7'), source: store.get('source', 'all'), daily: [], currency: store.get('currency', 'krw'), fx: null, breakdown: null,
+  days: '1' /* always opens on 오늘 */, source: store.get('source', 'all'), daily: [], currency: store.get('currency', 'krw'), fx: null, breakdown: null,
   items: [], open: new Set(), next: null, loading: false, done: false, generation: 0,
 };
-const filters = () => { const q = { source: state.source }; if (state.days) q.days = state.days; return q; };
+// Calendar periods in the viewer's time zone: 오늘 = since today's midnight, 7일 = today and the 6 days before.
+const since = (days) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (days - 1)); return d.toISOString(); };
+const filters = () => { const q = { source: state.source }; if (state.days) q.since = since(Number(state.days)); return q; };
 
 // ---------- filters: any change starts the history over
-for (const b of $('days').querySelectorAll('button')) b.addEventListener('click', () => { state.days = b.dataset.days; store.set('days', state.days); reload(); });
+for (const b of $('days').querySelectorAll('button')) b.addEventListener('click', () => { state.days = b.dataset.days; reload(); });
 $('source').addEventListener('change', (e) => { state.source = e.target.value; store.set('source', state.source); reload(); });
 $('toggle-table').addEventListener('click', (e) => {
   const t = $('chart-table'); t.hidden = !t.hidden;

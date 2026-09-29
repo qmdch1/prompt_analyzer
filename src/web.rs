@@ -6,10 +6,10 @@ use serde_json::{json, Value};
 
 pub async fn index() -> Html<&'static str> { Html(include_str!("../web/index.html")) }
 
-/// `source`: agent name or "all"; `days`: look-back window (omit for all time); `tz`: IANA zone for daily buckets.
+/// `source`: agent name or "all"; `since`: RFC 3339 start of the period (omit for all time); `tz`: IANA zone for daily buckets.
 /// `before` / `after`: prompt numbers for paging the history (newest first).
 #[derive(Deserialize)]
-pub struct Filter { source: Option<String>, days: Option<i32>, tz: Option<String>, before: Option<i64>, after: Option<i64>, limit: Option<i64> }
+pub struct Filter { source: Option<String>, since: Option<String>, tz: Option<String>, before: Option<i64>, after: Option<i64>, limit: Option<i64> }
 
 fn internal(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) { err(StatusCode::INTERNAL_SERVER_ERROR, e) }
 
@@ -21,7 +21,7 @@ pub async fn dashboard(State(s): State<AppState>, Query(f): Query<Filter>) -> Ap
         runs AS (
             SELECT r.*, coalesce(s.source, 'api') AS source FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
             WHERE ($1::text IS NULL OR coalesce(s.source, 'api') = $1)
-              AND ($2::int IS NULL OR r.created_at >= now() - make_interval(days => $2))),
+              AND ($2::timestamptz IS NULL OR r.created_at >= $2::timestamptz)),
         tasks AS (SELECT DISTINCT session_id FROM runs),
         evaluated AS (SELECT DISTINCT r.session_id FROM prompt_runs r JOIN tasks t ON t.session_id = r.session_id JOIN evaluations e ON e.run_id = r.id)
         SELECT jsonb_build_object(
@@ -40,22 +40,22 @@ pub async fn dashboard(State(s): State<AppState>, Query(f): Query<Filter>) -> Ap
               SELECT to_char(r.created_at AT TIME ZONE (SELECT name FROM tz), 'YYYY-MM-DD') AS day, r.source,
                      sum(r.input_tokens + r.output_tokens) AS tokens
               FROM runs r GROUP BY 1, 2) d), '[]'::jsonb))"#)
-        .bind(&source).bind(f.days).bind(f.tz).fetch_one(&s.db).await.map_err(internal)?;
-    v["breakdown"] = breakdown(&s, &source, f.days).await?;
+        .bind(&source).bind(&f.since).bind(f.tz).fetch_one(&s.db).await.map_err(internal)?;
+    v["breakdown"] = breakdown(&s, &source, &f.since).await?;
     v["fx"] = pricing::usd_krw(&s.http, &s.fx).await;
     Ok(Json(v))
 }
 
 /// Tokens and cost split into cached input, fresh input, and output, priced per model.
-async fn breakdown(s: &AppState, source: &Option<String>, days: Option<i32>) -> ApiResult<Value> {
+async fn breakdown(s: &AppState, source: &Option<String>, since: &Option<String>) -> ApiResult<Value> {
     let per_model: Vec<(String, i64, i64, i64)> = sqlx::query_as(r#"
         SELECT r.model, sum(r.input_tokens)::bigint, sum(r.cached_tokens)::bigint, sum(r.output_tokens)::bigint
         FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
         WHERE r.status = 'SUCCEEDED'
           AND ($1::text IS NULL OR coalesce(s.source, 'api') = $1)
-          AND ($2::int IS NULL OR r.created_at >= now() - make_interval(days => $2))
+          AND ($2::timestamptz IS NULL OR r.created_at >= $2::timestamptz)
         GROUP BY r.model"#)
-        .bind(source).bind(days).fetch_all(&s.db).await.map_err(internal)?;
+        .bind(source).bind(since).fetch_all(&s.db).await.map_err(internal)?;
     let (mut cached, mut fresh, mut output, mut unpriced) = (0i64, 0i64, 0i64, 0i64);
     let mut cost = pricing::Cost::default();
     for (model, input, c, o) in per_model {
@@ -85,11 +85,11 @@ pub async fn prompts(State(s): State<AppState>, Query(f): Query<Filter>) -> ApiR
                    (SELECT jsonb_build_object('quality_score', e.quality_score, 'accepted', e.accepted, 'auto', e.auto) FROM evaluations e WHERE e.run_id = r.id) AS evaluation
             FROM prompt_runs r JOIN sessions s ON s.id = r.session_id
             WHERE ($1::text IS NULL OR coalesce(s.source, 'api') = $1)
-              AND ($2::int IS NULL OR r.created_at >= now() - make_interval(days => $2))
+              AND ($2::timestamptz IS NULL OR r.created_at >= $2::timestamptz)
               AND ($3::bigint IS NULL OR r.no < $3)
               AND ($4::bigint IS NULL OR r.no > $4)
             ORDER BY r.no DESC LIMIT $5) x"#)
-        .bind(source).bind(f.days).bind(f.before).bind(f.after).bind(limit).fetch_one(&s.db).await.map_err(internal)?;
+        .bind(source).bind(&f.since).bind(f.before).bind(f.after).bind(limit).fetch_one(&s.db).await.map_err(internal)?;
     let list = items.as_array_mut().map(std::mem::take).unwrap_or_default();
     let next_before = if list.len() as i64 == limit { list.last().and_then(|r| r["no"].as_i64()) } else { None };
     let list: Vec<Value> = list.into_iter().map(|mut r| {
