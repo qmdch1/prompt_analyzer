@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::{env, sync::Mutex, time::{Duration, Instant}};
 
 /// (model id prefix, input, cached input, output) in USD per 1M tokens — most specific prefix first.
-/// Sources: Anthropic model table (2026-06) and developers.openai.com/api/docs/pricing (2026-09).
+/// Sources: Anthropic model table (2026-06) and developers.openai.com/api/docs/pricing (2026-09, standard tier).
 /// Cache writes are billed like fresh input here, so Claude costs are a slight underestimate.
 const PRICES: &[(&str, f64, f64, f64)] = &[
     ("claude-fable-5-1", 10.0, 0.25, 50.0),
@@ -17,6 +17,7 @@ const PRICES: &[(&str, f64, f64, f64)] = &[
     ("claude-sonnet-5", 2.0, 0.20, 10.0),
     ("claude-sonnet-4", 3.0, 0.30, 15.0),
     ("claude-haiku-4-5", 1.0, 0.10, 5.0),
+    ("gpt-6.1-sol", 2.0, 0.10, 10.0),
     ("gpt-6-astra", 10.0, 1.0, 50.0),
     ("gpt-6-sol", 2.0, 0.20, 10.0),
     ("gpt-6-luna", 0.10, 0.01, 0.50),
@@ -82,6 +83,7 @@ mod tests {
         assert_eq!(cost_usd("claude-opus-5-5", 2_000_000, 1_000_000, 1_000_000), Some(24.2));
         assert_eq!(cost_usd("claude-haiku-4-5-20251001", 1_000_000, 0, 0), Some(1.0));
         assert_eq!(cost_usd("gpt-5.6-sol", 1_000_000, 0, 0), Some(4.0));  // not the gpt-5 row
+        assert_eq!(cost_usd("gpt-6.1-sol", 1_000_000, 0, 1_000_000), Some(12.0));
         let astra = cost_usd("gpt-6-astra", 16_804, 7_168, 7).unwrap();
         assert!((astra - (9_636.0 * 10.0 + 7_168.0 * 1.0 + 7.0 * 50.0) / 1e6).abs() < 1e-12);
         assert_eq!(cost_usd("claude", 0, 0, 0), None);

@@ -118,15 +118,25 @@ def codex_turn(transcript, turn_id):
 CODEX_INTERNAL_PROMPTS = ("# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions",)
 
 
+def is_subagent_thread(transcript):
+    """Codex marks a subagent's own thread in the transcript's first line (session_meta.source.subagent).
+    agent_id / agent_type in the hook input can't tell: a multi-agent main thread carries them too."""
+    try:
+        with open(local_path(transcript), encoding="utf-8") as f:
+            meta = json.loads(f.readline()).get("payload") or {}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+    return isinstance(meta.get("source"), dict) and "subagent" in meta["source"]
+
+
 def is_internal(source, event):
-    """Codex app background threads (e.g. suggestions) keep no transcript, and subagent threads carry an
-    agent id; skip both, and the app's known background prompts."""
+    """Codex app background threads (e.g. suggestions) keep no transcript; skip them, subagent threads,
+    and the app's known background prompts."""
     if source != "codex":
         return False
-    if event.get("agent_id") or event.get("agent_type"):
-        return True
     prompt = (event.get("prompt") or "").lstrip()
-    return not event.get("transcript_path") or prompt.startswith(CODEX_INTERNAL_PROMPTS)
+    transcript = event.get("transcript_path")
+    return not transcript or prompt.startswith(CODEX_INTERNAL_PROMPTS) or is_subagent_thread(transcript)
 
 
 def main():
