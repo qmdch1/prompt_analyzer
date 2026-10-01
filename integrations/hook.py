@@ -34,19 +34,28 @@ def local_path(path):
     return path
 
 
-def read_jsonl(path):
-    path = local_path(path)
-    entries = []
+def tail_entries(path, enough, keep=lambda line: True):
+    """The transcript's last entries: a 1 MB tail, grown until `enough(entries)` or the whole file is read.
+    Only lines passing `keep` (raw bytes) are parsed. Threads grow to hundreds of megabytes (one Codex
+    thread passed 800 MB); parsing all of it outlasts the hook's 10 s timeout, and the turn is at the end."""
     try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    entries.append(json.loads(line))
-                except ValueError:
-                    pass
+        with open(local_path(path), "rb") as f:
+            end, size = f.seek(0, os.SEEK_END), 1 << 20
+            while True:
+                start = max(0, end - size)
+                f.seek(start)
+                entries = []
+                for line in f.read(end - start).split(b"\n")[1 if start else 0:]:  # a tail's first line is cut off
+                    if keep(line):
+                        try:
+                            entries.append(json.loads(line))
+                        except ValueError:
+                            pass
+                if start == 0 or enough(entries):
+                    return entries
+                size *= 4
     except (OSError, TypeError):
-        pass
-    return entries
+        return []
 
 
 def is_human_prompt(e):
@@ -68,7 +77,10 @@ def claude_turn(transcript):
     """Usage, final text and model of the last Claude Code turn, plus whether its final message
     (stop_reason other than tool_use) has been written yet. The turn starts after the previous
     finished answer, so an interrupted attempt before the last prompt is counted too."""
-    entries = read_jsonl(transcript)
+    def enough(entries):
+        last = max((i for i, e in enumerate(entries) if is_human_prompt(e)), default=-1)
+        return any(is_final_answer(e) for e in entries[:max(last, 0)])
+    entries = tail_entries(transcript, enough)
     last_prompt = max((i for i, e in enumerate(entries) if is_human_prompt(e)), default=-1)
     start = max((i for i, e in enumerate(entries[:max(last_prompt, 0)]) if is_final_answer(e)), default=-1)
     usage, texts, model, done = {}, {}, None, False
@@ -94,8 +106,13 @@ def codex_turn(transcript, turn_id):
     """Token usage of one Codex turn: the sum of its requests' usage. Each request's token_count can be
     written more than once (same running total), and the running total itself can reset mid-thread,
     so per-request usage is the reliable measure."""
+    if not turn_id:
+        return None
+    def started(entries):
+        return any((e.get("payload") or {}).get("type") == "task_started" and e["payload"].get("turn_id") == turn_id for e in entries)
+    entries = tail_entries(transcript, started, keep=lambda line: b"token_count" in line or turn_id.encode() in line)
     inside, seen, last_total, used = False, False, None, {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
-    for e in read_jsonl(transcript):
+    for e in entries:
         p = e.get("payload") or {}
         kind = p.get("type")
         if kind == "task_started" and p.get("turn_id") == turn_id:

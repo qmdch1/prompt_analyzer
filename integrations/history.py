@@ -20,6 +20,8 @@ CODEX_INTERNAL = "# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions"
 # Text Claude Code writes as a "user" entry that nobody typed: reminders, command output, interrupt and image markers.
 WRAPPERS = ("<system-reminder>", "<local-command", "<command-message>", "<bash-", "<task-notification", "<user-prompt-submit-hook>",
             "[Request interrupted", "[Image: original")
+# Codex lines the import never reads (model output, tool calls, compaction snapshots): most of a thread's size.
+CODEX_BULK = (b'"type":"response_item"', b'"type":"compacted"', b'"type":"token_usage_record"', b'"type":"world_state"')
 
 
 def transcript_files(homes):
@@ -33,10 +35,12 @@ def transcript_files(homes):
 
 def read_jsonl(path):
     entries = []
-    with open(path, encoding="utf-8", errors="replace") as f:
+    with open(path, "rb") as f:
         for line in f:
+            if any(t in line[:120] for t in CODEX_BULK):
+                continue
             try:
-                entries.append(json.loads(line))
+                entries.append(json.loads(line.decode("utf-8", "replace")))
             except ValueError:
                 pass
     return entries
