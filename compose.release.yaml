@@ -1,0 +1,36 @@
+# Runs the published image, no source checkout needed:
+#   curl -fsSLO https://raw.githubusercontent.com/qmdch1/prompt_analyzer/main/compose.release.yaml
+#   docker compose -f compose.release.yaml up -d
+# Same project name, ports and DB volume as compose.yaml, so the two are interchangeable.
+# Pin a version with PROMPT_ANALYZER_TAG=0.1.0 (default: latest).
+name: prompt-analyzer
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prompt_analyzer
+      POSTGRES_USER: prompt
+      POSTGRES_PASSWORD: prompt
+    ports: ["127.0.0.1:15432:5432"]  # this PC only; 15432 so a local PostgreSQL on 5432 does not clash
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prompt -d prompt_analyzer"]
+      interval: 3s
+      retries: 20
+
+  api:
+    image: ghcr.io/qmdch1/prompt-analyzer:${PROMPT_ANALYZER_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://prompt:prompt@postgres:5432/prompt_analyzer
+    ports: ["127.0.0.1:8080:8080"]  # this PC only; no auth, so keep it off the network
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  postgres_data:
