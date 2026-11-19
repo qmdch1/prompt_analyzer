@@ -1,0 +1,17 @@
+{
+  "name": "prompt-analyzer",
+  "description": "Prompt Analyzer: records Claude Code prompts' tokens, cost and quality in a local dashboard",
+  "owner": {
+    "name": "qmdch1",
+    "url": "https://github.com/qmdch1"
+  },
+  "plugins": [
+    {
+      "name": "prompt-analyzer",
+      "source": "./",
+      "description": "Records every Claude Code prompt and answer (tokens, cost, retries) in the Prompt Analyzer dashboard at http://localhost:8080, and adds rate_last_answer / prompt_stats / check_connection MCP tools",
+      "category": "productivity",
+      "tags": ["observability", "tokens", "cost"]
+    }
+  ]
+}

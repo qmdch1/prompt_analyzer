@@ -72,6 +72,37 @@
 
 `NEW_TASK`, `RETRY`, `REFINE`을 명시적으로 기록해 서로 다른 작업과 개선 시도를 정확하게 구분합니다.
 
+## 설치
+
+소스를 받지 않고 쓰는 방법입니다. 소스에서 직접 빌드하려면 아래 [빠른 시작](#빠른-시작)을 따릅니다.
+
+**1. 대시보드 (Docker 이미지)** — 미리 빌드된 이미지 `ghcr.io/qmdch1/prompt-analyzer`(amd64·arm64)로 서버와 DB를 띄웁니다.
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/qmdch1/prompt_analyzer/main/compose.release.yaml
+docker compose -f compose.release.yaml up -d
+```
+
+Windows PowerShell에서는 `curl` 대신 `curl.exe`를 씁니다. 업데이트는 `docker compose -f compose.release.yaml pull` 후 다시 `up -d`, 버전 고정은 `PROMPT_ANALYZER_TAG=0.1.0`처럼 지정합니다. `compose.yaml`과 프로젝트 이름·DB 볼륨이 같아서 어느 쪽으로 띄워도 같은 기록을 씁니다.
+
+**2. Claude Code 플러그인** — Claude Code 안에서 실행하고, Claude Code를 새로 시작합니다.
+
+```text
+/plugin marketplace add qmdch1/prompt_analyzer
+/plugin install prompt-analyzer@prompt-analyzer
+```
+
+`UserPromptSubmit`·`Stop` 훅과 MCP 도구(`rate_last_answer`, `prompt_stats`, `check_connection`)가 함께 등록됩니다. 훅은 Python 3.9 이상이 필요합니다(`python3`, `python`, `py` 중 동작하는 것을 씁니다). Windows에서도 그대로 동작하며 Git Bash(Claude Code 기본 셸)로 실행됩니다. Python이 없거나 서버가 꺼져 있어도 프롬프트는 막지 않고 기록만 빠집니다. 서버 주소가 다르면 `PROMPT_ANALYZER_URL` 환경변수로 지정합니다. 업데이트는 `/plugin marketplace update prompt-analyzer`입니다.
+
+**3. Codex · 과거 기록 (`install.py`)** — 플러그인은 Claude Code만 연결합니다. Codex 훅과 과거 대화 기록 가져오기는 기존 설치 스크립트가 맡습니다(Linux·macOS·WSL).
+
+```bash
+git clone https://github.com/qmdch1/prompt_analyzer.git && cd prompt_analyzer
+python3 integrations/install.py --codex-only   # Codex 훅·MCP + 과거 기록(Claude Code 포함) 가져오기
+```
+
+`--codex-only`는 Claude Code 설정을 건드리지 않고, 예전에 `install.py`로 넣은 Claude Code 훅·MCP가 있으면 뺍니다. 플러그인과 `install.py`의 Claude Code 훅을 함께 두면 같은 프롬프트가 두 번 기록됩니다. Codex 없이 과거 기록만 가져오려면 `python3 integrations/install.py --import`입니다.
+
 ## 빠른 시작
 
 <p align="center">
@@ -231,6 +262,10 @@ web/index.html      대시보드 화면 (정적 HTML + JS)
 integrations/       Claude Code·Codex 훅, 설치 스크립트, 과거 기록 읽기(history.py)
 migrations/         PostgreSQL 스키마 (시작 시 자동 적용)
 compose.yaml        postgres + api
+compose.release.yaml  postgres + api (GHCR 이미지, 소스 없이 실행)
+.claude-plugin/     Claude Code 플러그인·마켓플레이스 정의 (MCP 포함)
+hooks/hooks.json    플러그인 훅 (integrations/hook.py 실행)
+.github/workflows/  GHCR 이미지 빌드 (v* 태그)
 ```
 
 > 실제 `.env`는 Git에 포함되지 않습니다. 모델 가격은 시점과 모델에 따라 달라지므로 환경변수로 관리합니다.

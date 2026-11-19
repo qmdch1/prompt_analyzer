@@ -26,8 +26,9 @@ def post(path, body):
 
 
 def local_path(path):
-    """Windows apps run this hook through wsl.exe and pass C:\\... paths; read them via /mnt/c."""
-    if isinstance(path, str):
+    """Windows apps run this hook through wsl.exe and pass C:\\... paths; read them via /mnt/c.
+    Native Windows Python (the Claude Code plugin on Windows) opens C:\\... paths as they are."""
+    if isinstance(path, str) and os.name != "nt":
         path = path.removeprefix("\\\\?\\")
         if len(path) > 2 and path[1] == ":" and path[2] in "\\/":
             return f"/mnt/{path[0].lower()}{path[2:]}".replace("\\", "/")
@@ -158,7 +159,7 @@ def is_internal(source, event):
 
 def main():
     source = sys.argv[1] if len(sys.argv) > 1 else "claude"
-    event = json.load(sys.stdin)
+    event = json.loads(sys.stdin.buffer.read())  # bytes: the hook JSON is UTF-8 whatever the console code page
     session_id = event.get("session_id")
     if not session_id or is_internal(source, event):
         return
@@ -191,10 +192,12 @@ def main():
 
 
 def backfill_hourly():
-    """At most once an hour, import past turns in the background so gaps (server was down) fill in."""
+    """At most once an hour, import past turns in the background so gaps (server was down) fill in.
+    Only the copy install.py puts in ~/.prompt-analyzer does this; the Claude Code plugin's copy
+    (run from the plugin cache) leaves past-transcript import to install.py."""
     here = Path(__file__).resolve().parent
     stamp = here / f"last-import-{hashlib.sha1(API.encode()).hexdigest()[:8]}"
-    if not (here / "install.py").exists() or (stamp.exists() and time.time() - stamp.stat().st_mtime < 3600):
+    if here != LOG.parent.resolve() or not (here / "install.py").exists() or (stamp.exists() and time.time() - stamp.stat().st_mtime < 3600):
         return
     stamp.touch()
     with open(here / "import.log", "a") as log:

@@ -1,0 +1,27 @@
+{
+  "description": "Record each prompt and answer in Prompt Analyzer. Runs integrations/hook.py with the first working Python 3.9+ (python3, python, py) and always exits 0, so a missing Python or a stopped server never blocks the prompt.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in python3 python py; do \"$p\" -c 'import sys; sys.exit(sys.version_info < (3, 9))' </dev/null >/dev/null 2>&1 && exec \"$p\" \"${CLAUDE_PLUGIN_ROOT}/integrations/hook.py\" claude; done; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in python3 python py; do \"$p\" -c 'import sys; sys.exit(sys.version_info < (3, 9))' </dev/null >/dev/null 2>&1 && exec \"$p\" \"${CLAUDE_PLUGIN_ROOT}/integrations/hook.py\" claude; done; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

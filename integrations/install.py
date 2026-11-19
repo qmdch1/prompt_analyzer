@@ -5,6 +5,7 @@
     python3 integrations/install.py --check      # is everything connected and recording?
     python3 integrations/install.py --import     # import past turns again (install already does it once)
     python3 integrations/install.py --uninstall  # remove everything again
+    python3 integrations/install.py --codex-only # leave Claude Code alone (it records through the plugin)
 
 Run it where the hook should live (Linux, macOS, or WSL). From WSL it also connects the Windows
 Claude Code / Codex apps, which then run the same hook through wsl.exe.
@@ -177,11 +178,18 @@ def main():
     if "--import" in sys.argv:
         return import_history()
     install = "--uninstall" not in sys.argv
-    found = agents()
+    found, plugin_side = agents(), []
+    if "--codex-only" in sys.argv:  # Claude Code records through the plugin; a second hook would record every turn twice
+        plugin_side = [f for f in found if f[1] == "claude"]
+        found = [f for f in found if f[1] == "codex"]
     if not found:
-        sys.exit("Claude Code도 Codex도 찾지 못했습니다.")
+        sys.exit("Claude Code도 Codex도 찾지 못했습니다." if not plugin_side else "Codex를 찾지 못했습니다.")
     if "--check" in sys.argv:
         return check(found)
+    for label, source, config, command, exe in plugin_side:
+        if our_groups(config):  # left over from an earlier full install
+            edit_hooks(config, command, False)
+            print(f"{label:<17} 훅 제거 ({config}), MCP {mcp(exe, source, False) if exe else 'CLI 없음'} — Claude Code는 플러그인이 기록합니다")
     if install:
         HOOK.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(Path(__file__).with_name("hook.py"), HOOK)

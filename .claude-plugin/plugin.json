@@ -1,0 +1,19 @@
+{
+  "name": "prompt-analyzer",
+  "displayName": "Prompt Analyzer",
+  "description": "Records every Claude Code prompt and answer (tokens, cost, retries) in the Prompt Analyzer dashboard, and adds MCP tools to rate answers and show prompt stats. Needs the dashboard running (docker compose) and Python 3.9+.",
+  "author": {
+    "name": "qmdch1",
+    "url": "https://github.com/qmdch1"
+  },
+  "homepage": "https://github.com/qmdch1/prompt_analyzer",
+  "repository": "https://github.com/qmdch1/prompt_analyzer",
+  "license": "MIT",
+  "keywords": ["observability", "tokens", "cost", "prompt-quality"],
+  "mcpServers": {
+    "prompt-analyzer": {
+      "type": "http",
+      "url": "${PROMPT_ANALYZER_URL:-http://localhost:8080}/mcp/claude"
+    }
+  }
+}
